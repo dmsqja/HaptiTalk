@@ -46,8 +46,8 @@ class STTProcessor:
                     compute_type=self.compute_type,
                     download_root=None,
                     local_files_only=False,
-                    cpu_threads=settings.CPU_THREADS,
-                    num_workers=settings.MAX_WORKERS
+                    cpu_threads=settings.CPU_THREADS,  # 설정에서 가져온 CPU 스레드 수
+                    num_workers=settings.MAX_WORKERS  # 설정에서 가져온 작업자 수
                 )
                 
                 load_time = time.time() - start_time
@@ -64,73 +64,6 @@ class STTProcessor:
                 gc.collect()
                 
                 raise RuntimeError(f"모델 로딩 실패: {str(e)}")
-    
-    def _prepare_transcribe_params(self, language: str, return_timestamps: bool) -> Dict[str, Any]:
-        """
-        Transcribe 매개변수 준비
-        
-        Args:
-            language: 인식할 언어 코드
-            return_timestamps: 단어별 타임스탬프 반환 여부
-            
-        Returns:
-            설정된 매개변수 딕셔너리
-        """
-        transcribe_params = {
-            "language": language,
-            "beam_size": settings.TRANSCRIBE_PARAMS.get("beam_size", 5),
-            "word_timestamps": return_timestamps,
-            "vad_filter": settings.TRANSCRIBE_PARAMS.get("vad_filter", True),
-            "task": settings.TRANSCRIBE_PARAMS.get("task", "transcribe"),
-            "condition_on_previous_text": settings.TRANSCRIBE_PARAMS.get("condition_on_previous_text", True),
-        }
-            
-        # VAD 파라미터가 설정되어 있으면 추가
-        if "vad_parameters" in settings.TRANSCRIBE_PARAMS:
-            transcribe_params["vad_parameters"] = settings.TRANSCRIBE_PARAMS["vad_parameters"]
-        
-        logger.debug(f"Transcribe 매개변수: {transcribe_params}")
-        return transcribe_params
-    
-    def _extract_word_timestamps(self, segments_list) -> List[TimestampedWord]:
-        """
-        단어 타임스탬프 추출
-        
-        Args:
-            segments_list: 세그먼트 목록
-            
-        Returns:
-            타임스탬프가 있는 단어 목록
-        """
-        if not segments_list:
-            return None
-            
-        logger.info("단어 타임스탬프 처리 시작")
-        words_data = []
-        
-        for segment in segments_list:
-            if hasattr(segment, 'words') and segment.words:
-                for word in segment.words:
-                    words_data.append({
-                        "word": word.word,
-                        "start": word.start,
-                        "end": word.end,
-                        "probability": word.probability
-                    })
-        
-        # TimestampedWord 형식으로 변환
-        words_list = [
-            TimestampedWord(
-                word=word["word"],
-                start=word["start"],
-                end=word["end"],
-                probability=word.get("probability", 1.0)
-            )
-            for word in words_data
-        ]
-        
-        logger.info(f"단어 타임스탬프 처리 완료. 총 {len(words_list)}개 단어")
-        return words_list
     
     async def process_audio(
         self, 
@@ -156,8 +89,6 @@ class STTProcessor:
         # 임시 파일 저장
         temp_file_path = await self._save_temp_file(audio_file)
         
-        logger.info(f"임시 파일 저장 완료: {temp_file_path}, 파일명: {audio_file.filename}")
-        
         # 임시로 연산 타입 변경이 필요한 경우
         current_compute_type = self.compute_type
         if compute_type and compute_type != self.compute_type:
@@ -171,14 +102,31 @@ class STTProcessor:
             # 오디오 로드
             audio = whisperx.load_audio(temp_file_path)
             
-            logger.info(f"오디오 로드 완료. 오디오 길이: {len(audio) / whisperx.audio.SAMPLE_RATE:.2f}초")
-            
             # transcribe 매개변수 준비
-            transcribe_params = self._prepare_transcribe_params(language, return_timestamps)
+            transcribe_params = {
+                "language": language,
+                "beam_size": settings.TRANSCRIBE_PARAMS.get("beam_size", 5),
+                "word_timestamps": return_timestamps,
+                "vad_filter": settings.TRANSCRIBE_PARAMS.get("vad_filter", True),
+                "task": settings.TRANSCRIBE_PARAMS.get("task", "transcribe"),
+                "condition_on_previous_text": settings.TRANSCRIBE_PARAMS.get("condition_on_previous_text", True),
+            }
             
-            # 모델 추론
+            # 언어별 초기 프롬프트 적용
+            if language in settings.LANGUAGE_PROMPTS:
+                transcribe_params["initial_prompt"] = settings.LANGUAGE_PROMPTS[language]
+            else:
+                transcribe_params["initial_prompt"] = settings.TRANSCRIBE_PARAMS.get("initial_prompt", "")
+                
+            # VAD 파라미터가 설정되어 있으면 추가
+            if "vad_parameters" in settings.TRANSCRIBE_PARAMS:
+                transcribe_params["vad_parameters"] = settings.TRANSCRIBE_PARAMS["vad_parameters"]
+            
+            # 로그 추가
+            logger.debug(f"Transcribe 매개변수: {transcribe_params}")
+            
+            # faster-whisper 모델 사용 방식으로 변경
             segments, info = self.model.transcribe(audio, **transcribe_params)
-            logger.info(f"모델 추론 완료. 감지된 언어: {info.language}, 확률: {info.language_probability:.2f}")
             
             # 결과 수집
             segments_list = list(segments)  # 제너레이터를 리스트로 변환
@@ -187,10 +135,40 @@ class STTProcessor:
             segment_texts = [segment.text for segment in segments_list]
             full_text = " ".join(segment_texts)
             
+            # 환각 필터링
+            if settings.HALLUCINATION_PATTERNS and full_text:
+                original_text = full_text
+                for pattern in settings.HALLUCINATION_PATTERNS:
+                    if pattern.lower() in full_text.lower():
+                        full_text = full_text.lower().replace(pattern.lower(), "").strip()
+                
+                if original_text != full_text:
+                    logger.info(f"환각 패턴 필터링 적용: '{original_text}' -> '{full_text}'")
+            
             # 단어 정렬 및 타임스탬프 처리
             words_list = None
             if return_timestamps and segments_list:
-                words_list = self._extract_word_timestamps(segments_list)
+                words_data = []
+                for segment in segments_list:
+                    if hasattr(segment, 'words') and segment.words:
+                        for word in segment.words:
+                            words_data.append({
+                                "word": word.word,
+                                "start": word.start,
+                                "end": word.end,
+                                "probability": word.probability
+                            })
+                
+                # TimestampedWord 형식으로 변환
+                words_list = [
+                    TimestampedWord(
+                        word=word["word"],
+                        start=word["start"],
+                        end=word["end"],
+                        probability=word.get("probability", 1.0)
+                    )
+                    for word in words_data
+                ]
             
             # 오디오 길이 계산
             audio_duration = len(audio) / whisperx.audio.SAMPLE_RATE
@@ -206,9 +184,6 @@ class STTProcessor:
                 duration=audio_duration,
                 processing_time=processing_time
             )
-            
-            logger.info(f"STT 응답 생성 완료. 최종 텍스트 길이: {len(full_text)}")
-            logger.debug(f"STT 응답 객체: {response.model_dump_json(indent=2)}")
             
             return response
             

@@ -97,177 +97,6 @@ class STTWebSocketManager:
         self.connection_manager = ConnectionManager()
         self.sessions: Dict[str, Dict[str, Any]] = {}
         
-    async def _initialize_session(self, connection_id: str, language: str) -> None:
-        """
-        WebSocket 세션 초기화
-        
-        Args:
-            connection_id: 연결 ID
-            language: 인식 언어
-        """
-        logger.info(f"WebSocket 세션 초기화: {connection_id}, 언어: {language}")
-        self.sessions[connection_id] = {
-            "buffer": bytearray(),
-            "last_chunk_time": time.time(),
-            "is_processing": False,
-            "language": language,
-            "segment_count": 0,
-            "last_transcription": "",
-            "is_first_segment": True
-        }
-    
-    async def _load_model_if_needed(self, connection_id: str) -> bool:
-        """
-        필요한 경우 STT 모델 로드
-        
-        Args:
-            connection_id: 연결 ID
-            
-        Returns:
-            모델 로드 성공 여부
-        """
-        if stt_processor.model is None:
-            logger.info("WhisperX 모델 로딩 시작...")
-            try:
-                await stt_processor.load_model()
-                logger.info("WhisperX 모델 로딩 완료")
-                return True
-            except Exception as e:
-                await self.connection_manager.send_json(connection_id, {
-                    "type": "error",
-                    "message": f"모델 로딩 실패: {str(e)}"
-                })
-                return False
-        else:
-            logger.info("WhisperX 모델이 이미 로드되어 있습니다.")
-            return True
-    
-    async def _handle_text_message(self, connection_id: str, text_data: str) -> bool:
-        """
-        텍스트 메시지 처리
-        
-        Args:
-            connection_id: 연결 ID
-            text_data: 수신된 텍스트 데이터
-            
-        Returns:
-            계속 처리해야 하는지 여부
-        """
-        if connection_id not in self.sessions:
-            return False
-            
-        try:
-            # 언어 변경 명령 처리 (예: "language:en")
-            if text_data.startswith("language:"):
-                new_language = text_data.split(":", 1)[1]
-                old_language = self.sessions[connection_id]["language"]
-                self.sessions[connection_id]["language"] = new_language
-                self.sessions[connection_id]["is_first_segment"] = True
-                
-                logger.info(f"언어 변경: {connection_id} - {old_language} -> {new_language}")
-                
-                await self.connection_manager.send_json(connection_id, {
-                    "type": "language_changed",
-                    "language": new_language,
-                    "message": f"인식 언어가 변경되었습니다: {new_language}"
-                })
-                return True
-                
-            # JSON 명령 처리
-            try:
-                data = json.loads(text_data)
-                
-                if "command" in data:
-                    command = data["command"]
-                    
-                    # 최종 처리 명령
-                    if command == "process_final":
-                        logger.info(f"최종 처리 요청 수신: {connection_id}")
-                        await self._process_audio_buffer(connection_id, is_final=True)
-                        logger.info(f"최종 처리 완료: {connection_id}")
-                        
-                        await self.connection_manager.send_json(connection_id, {
-                            "type": "processing_complete",
-                            "message": "오디오 처리가 완료되었습니다."
-                        })
-                        return True
-                    
-                    # 언어 설정 명령
-                    elif command == "set_language" and "language" in data:
-                        new_language = data["language"]
-                        old_language = self.sessions[connection_id]["language"]
-                        self.sessions[connection_id]["language"] = new_language
-                        self.sessions[connection_id]["is_first_segment"] = True
-                        
-                        logger.info(f"언어 변경: {connection_id} - {old_language} -> {new_language}")
-                        
-                        await self.connection_manager.send_json(connection_id, {
-                            "type": "language_changed",
-                            "language": new_language,
-                            "message": f"인식 언어가 변경되었습니다: {new_language}"
-                        })
-                        return True
-                    
-                    # 버퍼 초기화 명령
-                    elif command == "reset":
-                        session = self.sessions[connection_id]
-                        session["buffer"] = bytearray()
-                        session["segment_count"] = 0
-                        session["last_transcription"] = ""
-                        session["is_first_segment"] = True
-                        
-                        logger.info(f"버퍼 초기화: {connection_id}")
-                        
-                        await self.connection_manager.send_json(connection_id, {
-                            "type": "reset_complete",
-                            "message": "버퍼가 초기화되었습니다."
-                        })
-                        return True
-                
-            except json.JSONDecodeError:
-                # 유효하지 않은 JSON 형식
-                logger.warning(f"잘못된 JSON 형식: {connection_id} - {text_data}")
-        except Exception as e:
-            logger.error(f"텍스트 메시지 처리 오류: {connection_id} - {str(e)}")
-            await self.connection_manager.send_json(connection_id, {
-                "type": "error",
-                "message": f"메시지 처리 오류: {str(e)}"
-            })
-        
-        return True
-    
-    async def _handle_binary_message(self, connection_id: str, binary_data: bytes) -> bool:
-        """
-        바이너리 메시지 처리
-        
-        Args:
-            connection_id: 연결 ID
-            binary_data: 수신된 바이너리 데이터
-            
-        Returns:
-            계속 처리해야 하는지 여부
-        """
-        if connection_id not in self.sessions:
-            return False
-            
-        session = self.sessions[connection_id]
-        
-        # 데이터 버퍼에 추가
-        session["buffer"].extend(binary_data)
-        session["last_chunk_time"] = time.time()
-        
-        logger.info(f"오디오 데이터 수신: {connection_id}, 크기: {len(binary_data)} bytes, 현재 버퍼 크기: {len(session['buffer'])} bytes")
-        
-        # 버퍼 크기 확인 및 처리
-        # 1분 분량의 오디오 데이터 (16kHz, 16-bit, mono = 2바이트 * 16000 * 60 = 1,920,000바이트)
-        buffer_threshold = min(1920000, settings.MAX_AUDIO_BUFFER_MB * 1024 * 1024)
-        
-        if len(session["buffer"]) >= buffer_threshold and not session["is_processing"]:
-            # 병렬로 처리
-            asyncio.create_task(self._process_audio_buffer(connection_id))
-        
-        return True
-        
     async def handle_connection(self, websocket: WebSocket, language: str = "ko") -> None:
         """
         WebSocket 연결 처리
@@ -279,12 +108,33 @@ class STTWebSocketManager:
         connection_id = await self.connection_manager.connect(websocket)
         
         # 세션 초기화
-        await self._initialize_session(connection_id, language)
+        self.sessions[connection_id] = {
+            "buffer": bytearray(),
+            "last_chunk_time": time.time(),
+            "is_processing": False,
+            "language": language,
+            "segment_count": 0,
+            "last_transcription": "",  # 이전 인식 결과 저장
+            "is_first_segment": True   # 첫 번째 세그먼트 여부
+        }
         
         try:
-            # STT 모델 로드 확인
-            if not await self._load_model_if_needed(connection_id):
-                return
+            # STT 모델이 로드되지 않았다면 로드
+            if stt_processor.model is None:
+                logger.info("WhisperX 모델 로딩 시작...")
+                try:
+                    await stt_processor.load_model()
+                    logger.info("WhisperX 모델 로딩 완료")
+                except Exception as e:
+                    # 모델 로딩 실패 시 클라이언트에게 오류 메시지 전송
+                    await self.connection_manager.send_json(connection_id, {
+                        "type": "error",
+                        "message": f"모델 로딩 실패: {str(e)}"
+                    })
+                    # 클라이언트 연결 종료
+                    raise
+            else:
+                logger.info("WhisperX 모델이 이미 로드되어 있습니다.")
                 
             # 환영 메시지 전송
             await self.connection_manager.send_json(connection_id, {
@@ -296,20 +146,91 @@ class STTWebSocketManager:
             # 메시지 수신 대기
             while True:
                 try:
-                    logger.debug(f"WebSocket 메시지 수신 대기 중: {connection_id}")
                     # 메시지 수신
                     message = await websocket.receive()
-                    logger.debug(f"WebSocket 메시지 수신: {connection_id}, 타입: {'text' if 'text' in message else 'bytes'}")
                     
                     # 텍스트 메시지인 경우 (명령)
                     if "text" in message:
-                        if not await self._handle_text_message(connection_id, message["text"]):
-                            break
+                        text_data = message["text"]
+                        try:
+                            data = json.loads(text_data)
+                            if "command" in data:
+                                command = data["command"]
+                                
+                                # 최종 처리 명령인 경우
+                                if command == "process_final":
+                                    logger.info(f"최종 처리 요청 수신: {connection_id}")
+                                    
+                                    # 버퍼에 있는 데이터 최종 처리
+                                    await self._process_audio_buffer(connection_id, is_final=True)
+                                    
+                                    # 결과 전송 완료 메시지
+                                    await self.connection_manager.send_json(connection_id, {
+                                        "type": "processing_complete",
+                                        "message": "오디오 처리가 완료되었습니다."
+                                    })
+                                
+                                # 언어 설정 명령인 경우
+                                elif command == "set_language" and "language" in data:
+                                    new_language = data["language"]
+                                    
+                                    # 세션 언어 업데이트
+                                    if connection_id in self.sessions:
+                                        old_language = self.sessions[connection_id]["language"]
+                                        self.sessions[connection_id]["language"] = new_language
+                                        # 새 언어로 전환할 때 첫 번째 세그먼트 플래그 설정
+                                        self.sessions[connection_id]["is_first_segment"] = True
+                                        
+                                        logger.info(f"언어 변경: {connection_id} - {old_language} -> {new_language}")
+                                        
+                                        # 클라이언트에게 언어 변경 확인 메시지 전송
+                                        await self.connection_manager.send_json(connection_id, {
+                                            "type": "language_changed",
+                                            "language": new_language,
+                                            "message": f"인식 언어가 변경되었습니다: {new_language}"
+                                        })
+                                
+                                # 버퍼 초기화 명령인 경우
+                                elif command == "reset":
+                                    if connection_id in self.sessions:
+                                        # 버퍼 비우기
+                                        session = self.sessions[connection_id]
+                                        session["buffer"] = bytearray()
+                                        session["segment_count"] = 0
+                                        session["last_transcription"] = ""
+                                        session["is_first_segment"] = True
+                                        
+                                        logger.info(f"버퍼 초기화: {connection_id}")
+                                        
+                                        # 클라이언트에게 초기화 확인 메시지 전송
+                                        await self.connection_manager.send_json(connection_id, {
+                                            "type": "reset_complete",
+                                            "message": "버퍼가 초기화되었습니다."
+                                        })
+                                
+                        except json.JSONDecodeError:
+                            # 유효하지 않은 JSON 형식
+                            logger.warning(f"잘못된 JSON 형식: {connection_id} - {text_data}")
                     
                     # 바이너리 메시지인 경우 (오디오 데이터)
                     elif "bytes" in message:
-                        if not await self._handle_binary_message(connection_id, message["bytes"]):
-                            break
+                        binary_data = message["bytes"]
+                        
+                        # 오디오 데이터 처리
+                        if connection_id in self.sessions:
+                            session = self.sessions[connection_id]
+                            
+                            # 데이터 버퍼에 추가
+                            session["buffer"].extend(binary_data)
+                            session["last_chunk_time"] = time.time()
+                            
+                            # 버퍼 크기 확인 및 처리
+                            # 5초 분량의 오디오 데이터 (16kHz, 16-bit, mono = 2바이트 * 16000 * 5 = 160000바이트)
+                            buffer_threshold = min(160000, settings.MAX_AUDIO_BUFFER_MB * 1024 * 1024)
+                            
+                            if len(session["buffer"]) >= buffer_threshold and not session["is_processing"]:
+                                # 병렬로 처리
+                                asyncio.create_task(self._process_audio_buffer(connection_id))
                 
                 except WebSocketDisconnect:
                     # 연결이 종료된 경우
@@ -346,9 +267,7 @@ class STTWebSocketManager:
         session = self.sessions[connection_id]
         
         # 이미 처리 중인 경우 반환
-        logger.info(f"오디오 버퍼 처리 시작: {connection_id}, 최종 처리: {is_final}, 현재 버퍼 크기: {len(session['buffer'])} bytes")
         if session["is_processing"]:
-            logger.warning(f"이미 처리 중이므로 건너뛰었습니다: {connection_id}")
             return
         
         # 처리 중 플래그 설정
@@ -358,7 +277,6 @@ class STTWebSocketManager:
             # 버퍼에 데이터가 있는지 확인
             if len(session["buffer"]) == 0:
                 session["is_processing"] = False
-                logger.info(f"처리할 오디오 데이터 없음: {connection_id}")
                 return
             
             # 버퍼에서 데이터 가져오기
@@ -378,8 +296,6 @@ class STTWebSocketManager:
                 # 바이너리 데이터를 numpy 배열로 변환
                 # 16-bit PCM, 단일 채널 오디오 가정
                 audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-                
-                logger.info(f"오디오 데이터 NumPy 배열로 변환 완료: {connection_id}, 배열 크기: {audio_np.shape}, 오디오 길이: {len(audio_np) / whisperx.audio.SAMPLE_RATE:.2f}초")
                 
                 # 오디오 데이터가 충분한지 확인
                 if len(audio_np) < 512:  # 너무 짧은 오디오는 처리하지 않음
@@ -403,8 +319,18 @@ class STTWebSocketManager:
                             "condition_on_previous_text": settings.TRANSCRIBE_PARAMS.get("condition_on_previous_text", True),
                         }
                         
+                        # 언어별 초기 프롬프트 적용 (첫 번째 세그먼트인 경우에만)
+                        if session["is_first_segment"]:
+                            language = session["language"]
+                            if language in settings.LANGUAGE_PROMPTS:
+                                transcribe_params["initial_prompt"] = settings.LANGUAGE_PROMPTS[language]
+                            else:
+                                transcribe_params["initial_prompt"] = settings.TRANSCRIBE_PARAMS.get("initial_prompt", "")
+                            
+                            # 첫 번째 세그먼트 플래그 해제
+                            session["is_first_segment"] = False
+                        elif session["last_transcription"]:
                             # 이전 인식 결과를 초기 프롬프트로 사용하여 연속성 보장
-                        if session["last_transcription"]:
                             transcribe_params["initial_prompt"] = session["last_transcription"]
                         
                         # VAD 파라미터 추가
@@ -420,7 +346,6 @@ class STTWebSocketManager:
                             )),
                             timeout=10
                         )
-                        logger.info(f"WebSocket 모델 추론 완료: {connection_id}, 감지된 언어: {info.language}, 확률: {info.language_probability:.2f}")
                         
                         # 결과 수집 및 후처리
                         segments_list = list(segments)
@@ -432,6 +357,17 @@ class STTWebSocketManager:
                                 text += segment.text + " "
                         
                         text = text.strip()
+                        
+                        # 환각 필터링
+                        if settings.HALLUCINATION_PATTERNS and text:
+                            original_text = text
+                            for pattern in settings.HALLUCINATION_PATTERNS:
+                                if pattern.lower() in text.lower():
+                                    logger.warning(f"환각 감지 및 제거: '{pattern}' in '{text}'")
+                                    text = text.lower().replace(pattern.lower(), "").strip()
+                            
+                            if original_text != text:
+                                logger.info(f"환각 패턴 필터링 적용: '{original_text}' -> '{text}'")
                         
                         if not text:
                             session["is_processing"] = False
@@ -461,12 +397,10 @@ class STTWebSocketManager:
                             # 말하기 속도 평가
                             speed_assessment = "보통"
                             if speaking_rate > 0:
-                                if speaking_rate < 110: # 한국어 기준 조정: 180 -> 110
+                                if speaking_rate < 130:
                                     speed_assessment = "느림"
-                                elif speaking_rate >= 160: # 한국어 기준 조정: 250 -> 160
+                                elif speaking_rate > 160:
                                     speed_assessment = "빠름"
-                                else: # 110 <= speaking_rate < 160
-                                    speed_assessment = "보통"
                             
                             # 결과 전송
                             try:
@@ -498,27 +432,8 @@ class STTWebSocketManager:
                                     result_data["words"] = words_with_timestamps
                                 
                                 await self.connection_manager.send_json(connection_id, result_data)
-
-                                # 상세 로깅 추가
-                                logger.info(f"STT 결과 전송 시작: {connection_id}")
-                                logger.info(f"  - 최종 여부: {is_final}")
-                                logger.info(f"  - 인식된 텍스트: {text}")
-                                logger.info(f"  - 감지된 언어: {info.language} (확률: {info.language_probability:.2f})")
-                                logger.info(f"  - 말하기 속도 (WPM): {speaking_rate:.2f}")
-                                logger.info(f"  - 속도 평가: {speed_assessment}")
                                 
-                                segment_log_data = result_data.get("segments", [])
-                                logger.info(f"  - 세그먼트 수: {len(segment_log_data)}")
-                                for i, seg_info in enumerate(segment_log_data):
-                                    logger.info(f"    Segment {i+1}: Text='{seg_info.get('text')}', Start={seg_info.get('start')}, End={seg_info.get('end')}")
-                                
-                                if result_data.get("words"):
-                                     logger.info(f"  - 단어 타임스탬프 수: {len(result_data['words'])}")
-
-                                # 전체 JSON 응답은 DEBUG 레벨로 유지 (필요시 활성화)
-                                logger.debug(f"  - 전체 전송 JSON: {json.dumps(result_data, ensure_ascii=False, indent=2)}")
-                                logger.info(f"STT 결과 전송 완료: {connection_id}")
-
+                                logger.debug(f"문장 인식 결과: {connection_id} -> {text} (말하기 속도: {speaking_rate} WPM, 평가: {speed_assessment})")
                             except (RuntimeError, WebSocketDisconnect) as e:
                                 logger.info(f"결과 전송 중 연결 종료: {connection_id} - {str(e)}")
                                 return

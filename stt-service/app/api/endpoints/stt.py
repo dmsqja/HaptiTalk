@@ -40,9 +40,6 @@ async def transcribe_audio(
             detail=f"지원하지 않는 파일 형식입니다: {file_ext}. 지원되는 형식: wav, mp3, ogg, flac"
         )
     
-    logger.info(f"STT 요청 수신 - 파일: {audio_file.filename}, 크기: {audio_file.size} bytes, 타입: {audio_file.content_type}")
-    logger.info(f"STT 요청 파라미터 - 언어: {request.language}, 타임스탬프 반환: {request.return_timestamps}, 연산 타입: {request.compute_type}")
-    
     try:
         # STT 처리
         result = await stt_processor.process_audio(
