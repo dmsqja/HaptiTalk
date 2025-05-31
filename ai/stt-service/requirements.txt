@@ -4,6 +4,9 @@ uvicorn[standard]==0.29.0  # WebSocket 지원 포함
 python-multipart==0.0.9    # 파일 업로드 처리
 websockets==12.0            # WebSocket 지원
 
+# HTTP 클라이언트 (감정분석 서비스 연동)
+httpx==0.28.1
+
 # WhisperX - 음성 인식 라이브러리 및 의존성
 whisperx==3.1.1  # numpy 1.26.4와 호환되는 버전
 pyannote.audio==3.1.1
