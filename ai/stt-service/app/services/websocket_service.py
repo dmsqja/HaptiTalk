@@ -647,6 +647,11 @@ class STTWebSocketManager:
             # 메시지 수신 대기
             while True:
                 try:
+                    # WebSocket 연결 상태 확인
+                    if websocket.client_state == WebSocketState.DISCONNECTED:
+                        logger.info(f"WebSocket이 이미 연결 해제됨: {connection_id}")
+                        break
+                    
                     logger.debug(f"WebSocket 메시지 수신 대기 중: {connection_id}")
                     # 메시지 수신
                     message = await websocket.receive()
@@ -664,15 +669,28 @@ class STTWebSocketManager:
                 
                 except WebSocketDisconnect:
                     # 연결이 종료된 경우
+                    logger.info(f"WebSocket 연결 종료됨: {connection_id}")
                     break
+                except RuntimeError as e:
+                    if "disconnect message has been received" in str(e):
+                        logger.info(f"WebSocket 연결이 이미 종료됨: {connection_id}")
+                        break
+                    else:
+                        logger.error(f"런타임 에러 발생: {connection_id} - {str(e)}", exc_info=True)
+                        break
                 except Exception as e:
                     # 기타 예외 처리
                     logger.error(f"메시지 수신 중 오류 발생: {connection_id} - {str(e)}", exc_info=True)
-                    # 오류 메시지 전송
-                    await self.connection_manager.send_json(connection_id, {
-                        "type": "error",
-                        "message": f"오류가 발생했습니다: {str(e)}"
-                    })
+                    # 오류 메시지 전송 시도 (연결이 유효한 경우에만)
+                    try:
+                        if websocket.client_state == WebSocketState.CONNECTED:
+                            await self.connection_manager.send_json(connection_id, {
+                                "type": "error",
+                                "message": f"오류가 발생했습니다: {str(e)}"
+                            })
+                    except:
+                        # 오류 메시지 전송 실패시 로그만 남기고 계속 진행
+                        logger.warning(f"오류 메시지 전송 실패: {connection_id}")
                     break
         
         finally:
