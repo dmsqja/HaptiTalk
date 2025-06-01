@@ -14,11 +14,16 @@ class AudioService {
   bool _isInitialized = false;
   StreamSubscription<Uint8List>? _audioStreamSubscription;
   
+  // 30초 버퍼링 관련 변수들
+  List<int> _audioBuffer = [];
+  Timer? _bufferTimer;
+  static const Duration bufferDuration = Duration(seconds: 30); // 30초 단위로 전송
+  static const int maxBufferSize = 30 * 16000 * 2; // 30초 * 샘플레이트 * 2바이트(16bit)
+  
   // 실제 기기용 안전한 오디오 설정
   static const int sampleRate = 16000; // 원래대로 되돌림 (더 안전함)
   static const int bitRate = 128000; 
   static const int numChannels = 1; // 모노
-  static const Duration bufferDuration = Duration(milliseconds: 100);
 
   // 상태 getter
   bool get isRecording => _isRecording;
@@ -185,18 +190,31 @@ class AudioService {
       await _sttService.startRecording();
       print('✅ STT 녹음 시작 성공');
 
-      // 오디오 스트림 리스닝
+      // 30초 버퍼 초기화
+      _audioBuffer.clear();
+      
+      // 30초 타이머 시작
+      _startBufferTimer();
+
+      // 오디오 스트림 리스닝 (버퍼링 방식)
       _audioStreamSubscription = stream.listen(
         (audioData) {
           try {
-            // STT 서비스로 오디오 데이터 전송
-            _sttService.sendAudioData(audioData);
-            // 주기적으로 오디오 데이터 전송 확인 (10초마다)
-            if (DateTime.now().millisecondsSinceEpoch % 10000 < 200) {
-              print('🎵 오디오 데이터 전송 중: ${audioData.length} bytes');
+            // 오디오 데이터를 버퍼에 추가
+            _audioBuffer.addAll(audioData);
+            
+            // 버퍼 크기 제한 (메모리 보호)
+            if (_audioBuffer.length > maxBufferSize) {
+              print('⚠️ 오디오 버퍼 크기 초과, 강제 전송');
+              _sendBufferedAudio();
+            }
+            
+            // 5초마다 버퍼 상태 로그 (디버깅용)
+            if (DateTime.now().millisecondsSinceEpoch % 5000 < 200) {
+              print('📊 오디오 버퍼 상태: ${_audioBuffer.length} bytes / ${maxBufferSize} bytes');
             }
           } catch (e) {
-            print('❌ 오디오 데이터 전송 실패: $e');
+            print('❌ 오디오 데이터 버퍼링 실패: $e');
           }
         },
         onError: (error) {
@@ -207,6 +225,7 @@ class AudioService {
         onDone: () {
           print('📡 오디오 스트림 종료');
           _isRecording = false;
+          _bufferTimer?.cancel();
         },
       );
 
@@ -247,10 +266,12 @@ class AudioService {
   Future<void> _cleanupAfterError() async {
     try {
       _isRecording = false;
+      _bufferTimer?.cancel();
       await _audioStreamSubscription?.cancel();
       _audioStreamSubscription = null;
       await _recorder.stop();
       await _sttService.stopRecording();
+      _audioBuffer.clear();
       print('🧹 에러 후 정리 작업 완료');
     } catch (e) {
       print('❌ 정리 작업 중 에러: $e');
@@ -264,7 +285,14 @@ class AudioService {
     }
 
     try {
-      // 오디오 스트림 구독 취소
+      // 마지막 버퍼 전송
+      if (_audioBuffer.isNotEmpty) {
+        print('📤 마지막 오디오 버퍼 전송: ${_audioBuffer.length} bytes');
+        _sendBufferedAudio();
+      }
+      
+      // 타이머 및 스트림 정리
+      _bufferTimer?.cancel();
       await _audioStreamSubscription?.cancel();
       _audioStreamSubscription = null;
 
@@ -275,6 +303,7 @@ class AudioService {
       await _sttService.stopRecording();
 
       _isRecording = false;
+      _audioBuffer.clear();
       print('🛑 음성 녹음 중지');
 
     } catch (e) {
@@ -289,6 +318,13 @@ class AudioService {
     }
 
     try {
+      // 현재 버퍼 전송
+      if (_audioBuffer.isNotEmpty) {
+        print('📤 일시정지 전 오디오 버퍼 전송: ${_audioBuffer.length} bytes');
+        _sendBufferedAudio();
+      }
+      
+      _bufferTimer?.cancel();
       await _recorder.pause();
       await _sttService.stopRecording();
       print('⏸️ 녹음 일시 정지');
@@ -302,6 +338,7 @@ class AudioService {
     try {
       await _recorder.resume();
       await _sttService.startRecording();
+      _startBufferTimer(); // 타이머 재시작
       print('▶️ 녹음 재개');
     } catch (e) {
       print('❌ 녹음 재개 실패: $e');
@@ -332,9 +369,11 @@ class AudioService {
   /// 서비스 해제
   Future<void> dispose() async {
     await stopRecording();
+    _bufferTimer?.cancel();
     await _audioStreamSubscription?.cancel();
     await _recorder.dispose();
     _sttService.disconnect();
+    _audioBuffer.clear();
     
     _isInitialized = false;
     print('🧹 AudioService 해제');
@@ -350,5 +389,21 @@ class AudioService {
       'isInitialized': _isInitialized,
       'isSTTConnected': isSTTConnected,
     };
+  }
+
+  /// 30초 타이머 시작
+  void _startBufferTimer() {
+    _bufferTimer = Timer.periodic(bufferDuration, (Timer timer) {
+      _sendBufferedAudio();
+    });
+  }
+
+  /// 버퍼링된 오디오 전송
+  void _sendBufferedAudio() {
+    if (_audioBuffer.isNotEmpty) {
+      final audioData = Uint8List.fromList(_audioBuffer);
+      _sttService.sendAudioData(audioData);
+      _audioBuffer.clear();
+    }
   }
 } 
