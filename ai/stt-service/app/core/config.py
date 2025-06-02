@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "STT Service"
     
+    # 오디오 관련 상수
+    SAMPLE_RATE: int = 16000  # 오디오 샘플링 레이트 (Hz)
+    DEFAULT_BUFFER_SIZE: int = 960000  # 기본 오디오 버퍼 크기 (bytes)
+    
     # WhisperX 모델 설정
     WHISPER_MODEL: str = "turbo"  # 사용할 모델 (tiny, base, small, medium, large, large-v3)
     DEVICE: str = "cuda"  # 사용할 장치 ("cuda" 또는 "cpu")
@@ -42,7 +46,7 @@ class Settings(BaseSettings):
     
     # 시스템 리소스 제한
     MAX_WORKERS: int = 4  # 병렬 작업자 수
-    MAX_AUDIO_BUFFER_MB: int = 30  # 최대 오디오 버퍼 크기(MB)
+    MAX_AUDIO_BUFFER_MB: int = 15  # 최대 오디오 버퍼 크기(MB) - 30초 분량
     
     # 시나리오별 VAD 파라미터 (음성 감지 민감도)
     SCENARIO_VAD_PARAMS: Dict[str, Dict[str, Any]] = {

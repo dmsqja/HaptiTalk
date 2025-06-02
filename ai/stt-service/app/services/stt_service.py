@@ -12,7 +12,6 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.core.models import STTResponse, TimestampedWord
 
-
 class STTProcessor:
     """WhisperX 모델을 사용한 STT 처리 클래스"""
     
@@ -174,7 +173,7 @@ class STTProcessor:
             # 오디오 로드
             audio = whisperx.load_audio(temp_file_path)
             
-            logger.info(f"오디오 로드 완료. 오디오 길이: {len(audio) / whisperx.audio.SAMPLE_RATE:.2f}초")
+            logger.info(f"오디오 로드 완료. 오디오 길이: {len(audio) / settings.SAMPLE_RATE:.2f}초")
             
             # transcribe 매개변수 준비
             transcribe_params = self._prepare_transcribe_params(language, scenario, return_timestamps)
@@ -196,7 +195,7 @@ class STTProcessor:
                 words_list = self._extract_word_timestamps(segments_list)
             
             # 오디오 길이 계산
-            audio_duration = len(audio) / whisperx.audio.SAMPLE_RATE
+            audio_duration = len(audio) / settings.SAMPLE_RATE
             
             processing_time = time.time() - start_time
             logger.info(f"오디오 처리 완료 (소요 시간: {processing_time:.2f}초, 오디오 길이: {audio_duration:.2f}초)")

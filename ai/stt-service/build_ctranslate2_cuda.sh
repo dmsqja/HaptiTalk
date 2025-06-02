@@ -51,4 +51,3 @@ pip install dist/*.whl
 cd $CURRENT_DIR
 
 echo "CTranslate2가 CUDA 지원으로 성공적으로 빌드되었습니다."
-echo "이제 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload' 명령으로 서버를 실행하세요." 
