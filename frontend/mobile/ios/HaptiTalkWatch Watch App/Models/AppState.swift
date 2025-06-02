@@ -476,92 +476,118 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         #endif
     }
     
-    // 📊 S1: 속도 조절 패턴 (메타포: 빠른 심장 박동)
+    // 📊 S1: 속도 조절 패턴 (메타포: 빠른 심장 박동) - 🔥 강화된 버전
     private func playSpeedControlPattern(device: WKInterfaceDevice) {
-        // 100ms 진동 x 3회, 100ms 간격, 중간 강도
-        device.play(.notification)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            device.play(.notification)
+        // 매우 빠른 3회 연속 진동, 강한 강도, 120ms 간격으로 더 뚜렷하게
+        device.play(.notification)  // 강함
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            device.play(.notification)  // 강함
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            device.play(.notification)
-        }
-    }
-    
-    // 📊 L1: 경청 강화 패턴 (메타포: 점진적 주의 집중)
-    private func playListeningPattern(device: WKInterfaceDevice) {
-        // 200ms 진동 x 3회, 점진적 강도 증가, 150ms 간격
-        device.play(.click)  // 약함
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            device.play(.directionUp)  // 중간
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
             device.play(.notification)  // 강함
         }
     }
     
-    // 📊 F1: 주제 전환 패턴 (메타포: 페이지 넘기기)
+    // 📊 L1: 경청 강화 패턴 (메타포: 점진적 주의 집중) - 🔥 강화된 버전
+    private func playListeningPattern(device: WKInterfaceDevice) {
+        // 매우 뚜렷한 점진적 강도 증가, 300ms 간격으로 더 명확하게
+        device.play(.click)  // 매우 약함
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            device.play(.directionUp)  // 중간
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            device.play(.notification)  // 매우 강함
+            // 추가 강조를 위한 더블 탭
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                device.play(.notification)
+            }
+        }
+    }
+    
+    // 📊 F1: 주제 전환 패턴 (메타포: 페이지 넘기기) - 🔥 강화된 버전
     private func playTopicChangePattern(device: WKInterfaceDevice) {
-        // 400ms 긴 단일 진동, 높은 강도
+        // 매우 긴 단일 진동으로 다른 패턴과 확실히 구분
         device.play(.success)
+        // 0.6초 후 추가 긴 진동으로 "페이지 넘기기" 완료 표현
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            device.play(.success)
+        }
     }
     
-    // 📊 R1: 호감도 상승 패턴 (메타포: 상승하는 파동)
+    // 📊 R1: 호감도 상승 패턴 (메타포: 상승하는 파동) - 🔥 강화된 버전
     private func playLikabilityUpPattern(device: WKInterfaceDevice) {
-        // 200ms 진동 x 3회, 점진적 증가, 50ms 간격
-        device.play(.click)  // 낮음
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            device.play(.directionUp)  // 중간
+        // 매우 부드럽고 긍정적인 상승 패턴, 간격을 늘려서 더 명확하게
+        device.play(.click)  // 부드럽게 시작
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            device.play(.directionUp)  // 중간 상승
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            device.play(.success)  // 높음
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            device.play(.success)  // 행복한 정점
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            device.play(.success)  // 지속되는 행복감
         }
     }
     
-    // 📊 F2: 침묵 관리 패턴 (메타포: 부드러운 알림)
+    // 📊 F2: 침묵 관리 패턴 (메타포: 부드러운 알림) - 🔥 강화된 버전
     private func playSilenceManagementPattern(device: WKInterfaceDevice) {
-        // 150ms 진동 x 2회, 약간 증가하는 강도, 300ms 간격
-        device.play(.click)  // 약함
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            device.play(.directionUp)  // 중간
+        // 매우 부드러운 2회 탭, 긴 간격으로 "침묵"의 느낌 표현
+        device.play(.click)  // 매우 부드럽게
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {  // 긴 침묵 후
+            device.play(.click)  // 다시 부드럽게
         }
     }
     
-    // 📊 S2: 음량 조절 패턴 (메타포: 음파 증폭/감소)
+    // 📊 S2: 음량 조절 패턴 (메타포: 음파 증폭/감소) - 🔥 강화된 버전
     private func playVolumeControlPattern(device: WKInterfaceDevice, pattern: String) {
         if pattern.contains("loud") {
-            // 음량 낮춤: 강→약 (300ms 각각, 50ms 간격)
-            device.play(.notification)  // 강함
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                device.play(.click)  // 약함
+            // 음량 낮춤: 매우 강함→매우 약함으로 극명한 대비
+            device.play(.notification)  // 매우 강함
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                device.play(.notification)  // 강함 유지
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                device.play(.click)  // 매우 약함
             }
         } else {
-            // 음량 높임: 약→강 (300ms 각각, 50ms 간격)
-            device.play(.click)  // 약함
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                device.play(.notification)  // 강함
+            // 음량 높임: 매우 약함→매우 강함으로 극명한 대비
+            device.play(.click)  // 매우 약함
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                device.play(.notification)  // 매우 강함
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    device.play(.notification)  // 강함 유지
+                }
             }
         }
     }
     
-    // 📊 R2: 관심도 하락 패턴 (메타포: 경고 알림)
+    // 📊 R2: 관심도 하락 패턴 (메타포: 경고 알림) - 🔥 강화된 버전
     private func playInterestDownPattern(device: WKInterfaceDevice) {
-        // 100ms 진동 x 2회, 강한 강도, 150ms 간격
-        device.play(.notification)  // 강함
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            device.play(.notification)  // 강함
+        // 매우 강하고 긴급한 경고 패턴
+        device.play(.notification)  // 강한 경고
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            device.play(.notification)  // 즉시 반복
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            device.play(.notification)  // 세 번째 강한 경고
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                device.play(.notification)  // 네 번째로 확실한 경고
+            }
         }
     }
     
-    // 📊 L3: 질문 제안 패턴 (메타포: 물음표 형태)
+    // 📊 L3: 질문 제안 패턴 (메타포: 물음표 형태) - 🔥 강화된 버전
     private func playQuestionSuggestionPattern(device: WKInterfaceDevice) {
-        // 80ms 진동 x 2회 + 300ms 긴 진동, 중간-높은 강도
-        device.play(.click)  // 짧음
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-            device.play(.click)  // 짧음
+        // 물음표 패턴을 더 명확하게: 짧음-짧음-긴 휴지-매우 긴 진동
+        device.play(.click)  // 첫 번째 짧은 탭
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            device.play(.click)  // 두 번째 짧은 탭
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-            device.play(.success)  // 길고 강함
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {  // 긴 휴지 (물음표의 공간)
+            device.play(.success)  // 길고 명확한 마침표
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                device.play(.success)  // 질문의 여운
+            }
         }
     }
 }

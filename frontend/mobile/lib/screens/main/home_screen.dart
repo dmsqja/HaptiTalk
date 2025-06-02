@@ -30,7 +30,7 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 25),
                 _buildRecentSessions(),
                 const SizedBox(height: 25),
-                _buildTipsSection(),
+                _buildTipsSection(context),
                 const SizedBox(height: 20),
               ],
             ),
@@ -463,7 +463,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   // 오늘의 팁 섹션
-  Widget _buildTipsSection() {
+  Widget _buildTipsSection(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -536,7 +536,9 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               ElevatedButton(
-                onPressed: () {},
+                onPressed: () {
+                  Navigator.pushNamed(context, AppRoutes.hapticPractice);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryColor,
                   foregroundColor: Colors.white,

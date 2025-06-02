@@ -14,6 +14,7 @@ import 'package:haptitalk/screens/profile/subscription_screen.dart';
 import 'package:haptitalk/screens/profile/statistics_detail_screen.dart';
 import 'package:haptitalk/screens/profile/help_support_screen.dart';
 import 'package:haptitalk/screens/debug/watch_debug_screen.dart';
+import 'package:haptitalk/screens/practice/haptic_practice_screen.dart';
 
 class AppRoutes {
   // 라우트 이름 정의
@@ -33,6 +34,7 @@ class AppRoutes {
   static const String statisticsDetail = '/profile/statistics';
   static const String helpSupport = '/profile/help';
   static const String watchDebug = '/watch-debug';
+  static const String hapticPractice = '/practice/haptic';
 
   // 라우트 생성 함수
   static Map<String, WidgetBuilder> getRoutes() {
@@ -57,6 +59,7 @@ class AppRoutes {
       statisticsDetail: (context) => const StatisticsDetailScreen(),
       helpSupport: (context) => const HelpSupportScreen(),
       watchDebug: (context) => const WatchDebugScreen(),
+      hapticPractice: (context) => const HapticPracticeScreen(),
     };
   }
 }
