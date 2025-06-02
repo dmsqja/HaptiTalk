@@ -388,13 +388,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 ),
                               )
                             : const Text(
-                                '회원가입',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                          '회원가입',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),

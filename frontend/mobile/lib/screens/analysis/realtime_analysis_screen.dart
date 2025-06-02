@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,11 +7,15 @@ import '../../config/theme.dart';
 import '../../constants/colors.dart';
 import '../../models/analysis/analysis_result.dart';
 import '../../models/session/session_model.dart';
+import '../../models/stt/stt_response.dart';
 import '../../providers/analysis_provider.dart';
 import '../../providers/session_provider.dart';
 import '../../services/watch_service.dart';
+import '../../services/audio_service.dart';
+import '../../services/realtime_service.dart';
 import '../../widgets/analysis/metrics_card.dart';
 import '../analysis/analysis_summary_screen.dart';
+import '../../services/auth_service.dart';
 
 class RealtimeAnalysisScreen extends StatefulWidget {
   final String sessionId;
@@ -26,37 +31,772 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   late Timer _timer;
   late Timer _watchSyncTimer;
   final WatchService _watchService = WatchService();
+  final AudioService _audioService = AudioService();
+  final RealtimeService _realtimeService = RealtimeService();
 
   int _seconds = 0;
-  bool _isRecording = true;
+  bool _isRecording = false;
   bool _isWatchConnected = false;
+  bool _isRealtimeConnected = false;
   String _transcription = '';
   String _feedback = '';
   List<String> _suggestedTopics = [];
+  bool _isAudioInitialized = false;
+  StreamSubscription? _sttSubscription;
+  StreamSubscription? _watchMessageSubscription;
 
-  // 분석 데이터
-  String _emotionState = '긍정적';
-  int _speakingSpeed = 85;
-  int _likability = 78;
-  int _interest = 92;
+  // 분석 데이터 (실제 AI 결과로 업데이트)
+  String _emotionState = '대기 중';
+  int _speakingSpeed = 0;
+  int _likability = 0;
+  int _interest = 0;
+  String _currentScenario = 'dating'; // 기본 시나리오
+
+  String _lastHapticMessage = '';  // 🚫 중복 햅틱 방지
+  DateTime? _lastHapticTime;  // ⏰ 마지막 햅틱 시간
+  final int _hapticCooldownSeconds = 15;  // 🕐 햅틱 쿨다운 (15초로 단축)
+  
+  // 🎯 햅틱 패턴 카테고리별 마지막 전송 시간
+  Map<String, DateTime> _lastHapticByCategory = {
+    'speaker': DateTime.now().subtract(Duration(hours: 1)),    // 화자 행동 (S)
+    'listener': DateTime.now().subtract(Duration(hours: 1)),   // 청자 행동 (L)  
+    'flow': DateTime.now().subtract(Duration(hours: 1)),       // 대화 흐름 (F)
+    'reaction': DateTime.now().subtract(Duration(hours: 1)),   // 상대방 반응 (R)
+  };
 
   @override
   void initState() {
     super.initState();
+    _initializeServices();
     _startTimer();
-    _startAnalysis();
     _checkWatchConnection();
     _startWatchSync();
+    _subscribeToWatchMessages();
 
     // 초기 추천 주제 설정
     _suggestedTopics = ['여행 경험', '좋아하는 여행지', '사진 취미', '역사적 장소', '제주도 명소'];
+    
+    // STT 스트림 구독 상태 주기적 확인
+    Timer.periodic(Duration(seconds: 10), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      if (_sttSubscription == null && _isAudioInitialized) {
+        print('🔄 STT 스트림 구독이 없음, 재구독 시도');
+        _subscribeToSTTMessages();
+      }
+    });
   }
 
   @override
   void dispose() {
     _timer.cancel();
     _watchSyncTimer.cancel();
+    _sttSubscription?.cancel();
+    _watchMessageSubscription?.cancel();
+    _audioService.dispose();
+    _realtimeService.disconnect();
     super.dispose();
+  }
+
+  /// 서비스 초기화
+  Future<void> _initializeServices() async {
+    try {
+      print('🔧 실시간 분석 서비스 초기화 시작');
+      
+      // AudioService 초기화
+      final initialized = await _audioService.initialize();
+      if (initialized) {
+        setState(() {
+          _isAudioInitialized = true;
+        });
+        print('✅ AudioService 초기화 완료');
+        
+        // Realtime Service 연결
+        await _connectToRealtimeService();
+        print('✅ Realtime Service 연결 완료');
+        
+        // 🎤 자동으로 녹음 시작
+        await _startRecordingAutomatically();
+        print('✅ 자동 녹음 시작 완료');
+        
+        // 📳 Watch 세션 시작 및 테스트 햅틱 피드백 전송
+        await _startWatchSession();
+        print('✅ Watch 세션 시작 완료');
+        
+        // ⭐ STT 메시지 스트림 구독 (모든 초기화 완료 후)
+        await Future.delayed(Duration(seconds: 2)); // 2초 대기
+        _subscribeToSTTMessages();
+        
+        print('✅ 실시간 분석 서비스 초기화 완료');
+      } else {
+        print('❌ AudioService 초기화 실패');
+        _showErrorSnackBar('마이크 권한이 필요합니다. 설정에서 권한을 허용해주세요.');
+      }
+    } catch (e) {
+      print('❌ 서비스 초기화 실패: $e');
+      _showErrorSnackBar('서비스 초기화에 실패했습니다: $e');
+    }
+  }
+
+  /// 자동으로 녹음 시작
+  Future<void> _startRecordingAutomatically() async {
+    if (!_isAudioInitialized) {
+      print('❌ 자동 녹음 시작 실패: AudioService가 초기화되지 않음');
+      return;
+    }
+
+    try {
+      print('🎤 자동 녹음 시작 시도...');
+      final success = await _audioService.startRealTimeRecording();
+      if (success) {
+        setState(() {
+          _isRecording = true;
+        });
+        print('✅ 자동 녹음 시작 성공');
+      } else {
+        print('❌ 자동 녹음 시작 실패');
+        _showErrorSnackBar('자동 녹음 시작에 실패했습니다. 수동으로 녹음을 시작해주세요.');
+      }
+    } catch (e) {
+      print('❌ 자동 녹음 시작 예외: $e');
+      _showErrorSnackBar('자동 녹음 시작 중 오류가 발생했습니다: $e');
+    }
+  }
+
+  /// Realtime Service 연결
+  Future<void> _connectToRealtimeService() async {
+    try {
+      // AuthService에서 실제 액세스 토큰 가져오기
+      final authService = AuthService();
+      final accessToken = await authService.getAccessToken();
+      
+      if (accessToken == null) {
+        print('❌ realtime-service 연결 실패: 액세스 토큰 없음');
+        _showErrorSnackBar('인증 토큰이 없습니다. 다시 로그인해주세요.');
+        return;
+      }
+      
+      final connected = await _realtimeService.connect(widget.sessionId, accessToken);
+      
+      setState(() {
+        _isRealtimeConnected = connected;
+      });
+      
+      if (connected) {
+        print('✅ realtime-service 연결 성공');
+        
+        // 햅틱 피드백 콜백 설정
+        _realtimeService.setHapticFeedbackCallback(_handleHapticFeedback);
+      } else {
+        print('❌ realtime-service 연결 실패');
+        _showErrorSnackBar('실시간 서비스 연결에 실패했습니다');
+      }
+    } catch (e) {
+      print('❌ realtime-service 연결 오류: $e');
+      _showErrorSnackBar('실시간 서비스 연결 오류: $e');
+    }
+  }
+
+  /// 햅틱 피드백 처리
+  void _handleHapticFeedback(Map<String, dynamic> feedbackData) {
+    print('🔔 햅틱 피드백 수신: $feedbackData');
+    
+    final feedbackType = feedbackData['type'] as String?;
+    final message = feedbackData['message'] as String?;
+    final hapticPattern = feedbackData['hapticPattern'] as String?;
+    final visualCue = feedbackData['visualCue'] as Map<String, dynamic>?;
+    
+    // UI 업데이트
+    if (message != null) {
+      setState(() {
+        _feedback = message;
+      });
+    }
+    
+    // Apple Watch 햅틱 전송
+    if (hapticPattern != null && _isWatchConnected) {
+      _sendHapticToWatch(feedbackType ?? 'general', hapticPattern, message ?? '');
+    }
+    
+    // 시각적 피드백 표시
+    if (visualCue != null) {
+      _showVisualFeedback(visualCue);
+    }
+  }
+
+  /// Apple Watch 햅틱 전송
+  Future<void> _sendHapticToWatch(String type, String pattern, String message) async {
+    try {
+      // WatchService는 message 파라미터만 받으므로 형식을 맞춰서 전송
+      final hapticMessage = '$type: $message';
+      await _watchService.sendHapticFeedback(hapticMessage);
+      print('📱 Apple Watch 햅틱 전송: $type - $pattern');
+    } catch (e) {
+      print('❌ Apple Watch 햅틱 전송 실패: $e');
+    }
+  }
+
+  /// 시각적 피드백 표시
+  void _showVisualFeedback(Map<String, dynamic> visualCue) {
+    final color = visualCue['color'] as String?;
+    final text = visualCue['text'] as String?;
+    
+    if (color != null && text != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(text),
+          backgroundColor: _hexToColor(color),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// Hex 컬러 문자열을 Color로 변환
+  Color _hexToColor(String hex) {
+    final hexCode = hex.replaceAll('#', '');
+    return Color(int.parse('FF$hexCode', radix: 16));
+  }
+
+  /// STT 메시지 스트림 구독
+  void _subscribeToSTTMessages() {
+    print('🔗 STT 메시지 스트림 구독 시작');
+    
+    try {
+      // 기존 구독이 있으면 취소
+      _sttSubscription?.cancel();
+      
+      // AudioService의 STT 메시지 스트림 확인
+      final sttStream = _audioService.sttMessageStream;
+      if (sttStream == null) {
+        print('❌ STT 메시지 스트림이 null입니다');
+        // 잠시 후 재시도
+        Timer(Duration(seconds: 1), () {
+          if (mounted) {
+            print('🔄 STT 메시지 스트림 재구독 시도');
+            _subscribeToSTTMessages();
+          }
+        });
+        return;
+      }
+      
+      print('✅ STT 메시지 스트림 발견, 구독 진행');
+      
+      _sttSubscription = sttStream.listen(
+        (response) {
+          print('📨 실시간 분석 화면에서 STT 메시지 수신: ${response.type}');
+          if (mounted) {
+            _handleSTTResponse(response);
+          } else {
+            print('⚠️ 화면이 dispose되어 STT 메시지 처리 스킵');
+          }
+        },
+        onError: (error) {
+          print('❌ STT 스트림 에러: $error');
+          _showErrorSnackBar('음성 인식 오류: $error');
+          
+          // 에러 후 재구독 시도
+          Timer(Duration(seconds: 2), () {
+            if (mounted) {
+              print('🔄 STT 스트림 에러 후 재구독 시도');
+              _subscribeToSTTMessages();
+            }
+          });
+        },
+        onDone: () {
+          print('📡 STT 스트림 종료');
+          
+          // 스트림 종료 후 재구독 시도
+          Timer(Duration(seconds: 1), () {
+            if (mounted) {
+              print('🔄 STT 스트림 종료 후 재구독 시도');
+              _subscribeToSTTMessages();
+            }
+          });
+        },
+      );
+      
+      print('✅ STT 메시지 스트림 구독 완료');
+      
+    } catch (e) {
+      print('❌ STT 메시지 스트림 구독 실패: $e');
+      
+      // 예외 발생 시 재시도
+      Timer(Duration(seconds: 2), () {
+        if (mounted) {
+          print('🔄 STT 메시지 스트림 구독 예외 후 재시도');
+          _subscribeToSTTMessages();
+        }
+      });
+    }
+  }
+
+  /// STT 응답 처리 및 realtime-service로 전송
+  void _handleSTTResponse(STTResponse response) {
+    print('🔍 STT 응답 처리 시작: ${response.type}');
+    
+    switch (response.type) {
+      case 'connected':
+        print('✅ STT 연결됨: ${response.connectionId}');
+        break;
+        
+      case 'transcription':
+        print('📝 전사 결과 수신: ${response.text?.substring(0, min(50, response.text?.length ?? 0))}...');
+        print('📊 isFinal: ${response.isFinal}, metadata 존재: ${response.metadata != null}');
+        print('📊 metadata 내용: ${response.metadata}');
+        
+        // 모든 전사 결과에 대해 분석 데이터 업데이트 (텍스트 유무와 관계없이)
+        setState(() {
+          print('🔄 setState 내부 진입 - 분석 데이터 업데이트 시작');
+          
+          // STT 결과에서 분석 데이터 추출 및 화면 업데이트
+          _updateAnalysisFromSTT(response);
+          
+          // 텍스트가 있는 경우에만 전사 내용 업데이트
+          if (response.text != null && response.text!.isNotEmpty) {
+            if (response.isFinal == true) {
+              // 최종 전사 결과 - realtime-service로 전송
+              _transcription += '${response.text} ';
+              print('📝 최종 전사 결과 추가: ${response.text}');
+            } else {
+              // 임시 전사 결과 (실시간 업데이트)
+              final sentences = _transcription.split(' ');
+              if (sentences.isNotEmpty) {
+                sentences[sentences.length - 1] = response.text!;
+                _transcription = sentences.join(' ');
+              } else {
+                _transcription = response.text!;
+              }
+              print('📝 임시 전사 결과 업데이트');
+            }
+          }
+          
+          print('🔄 setState 내부 처리 완료');
+        });
+        
+        // realtime-service로 전송 (setState 밖에서, 최종 결과만)
+        if (response.isFinal == true && response.text != null && response.text!.isNotEmpty) {
+          print('📤 realtime-service로 최종 결과 전송');
+          _sendToRealtimeService(response);
+        }
+        break;
+        
+      case 'status':
+        print('ℹ️ STT 상태: ${response.message}');
+        break;
+        
+      case 'error':
+        print('❌ STT 에러: ${response.message}');
+        _showErrorSnackBar('음성 인식 오류: ${response.message}');
+        break;
+        
+      default:
+        print('⚠️ 알 수 없는 STT 응답 타입: ${response.type}');
+        break;
+    }
+    
+    print('🔍 STT 응답 처리 완료: ${response.type}');
+  }
+
+  /// STT 결과에서 분석 데이터를 추출하여 화면 상태 업데이트
+  void _updateAnalysisFromSTT(STTResponse response) {
+    print('🔍 _updateAnalysisFromSTT 함수 시작');
+    
+    try {
+      // metadata에서 직접 데이터 추출
+      final metadata = response.metadata;
+      print('🔍 metadata 상태: ${metadata != null ? "존재함" : "null"}');
+      
+      if (metadata == null) {
+        print('⚠️ STT response에 metadata가 없습니다');
+        return;
+      }
+      
+      print('🔍 metadata 키들: ${metadata.keys.toList()}');
+      
+      // 이전 값들 저장 (변화 감지용)
+      final prevSpeakingSpeed = _speakingSpeed;
+      final prevEmotionState = _emotionState;
+      final prevInterest = _interest;
+      final prevLikability = _likability;
+      
+      print('🔍 이전 값들 - 속도: $prevSpeakingSpeed, 감정: $prevEmotionState, 관심: $prevInterest, 호감: $prevLikability');
+      
+      // speech_metrics 처리
+      final speechMetrics = metadata['speech_metrics'] as Map<String, dynamic>?;
+      print('🔍 speech_metrics 상태: ${speechMetrics != null ? "존재함" : "null"}');
+      
+      if (speechMetrics != null) {
+        print('🔍 speech_metrics 발견: $speechMetrics');
+        
+        // 말하기 속도 업데이트
+        final evaluationWpm = speechMetrics['evaluation_wpm'] as num?;
+        print('🔍 evaluation_wpm: $evaluationWpm');
+        if (evaluationWpm != null) {
+          _speakingSpeed = evaluationWpm.round();
+          print('📊 말하기 속도 업데이트: $_speakingSpeed WPM');
+        }
+        
+        // 속도 카테고리에 따른 감정 상태 업데이트
+        final speedCategory = speechMetrics['speed_category'] as String?;
+        print('🔍 speed_category: $speedCategory');
+        if (speedCategory != null) {
+          _emotionState = _mapSpeedToEmotion(speedCategory);
+          print('📊 감정 상태 업데이트: $_emotionState (속도: $speedCategory)');
+        }
+        
+        // 말하기 패턴에 따른 관심도 업데이트
+        final speechPattern = speechMetrics['speech_pattern'] as String?;
+        print('🔍 speech_pattern: $speechPattern');
+        if (speechPattern != null) {
+          _interest = _mapPatternToInterest(speechPattern);
+          print('📊 관심도 업데이트: $_interest (패턴: $speechPattern)');
+        }
+        
+        // 발화 밀도에 따른 호감도 업데이트
+        final speechDensity = speechMetrics['speech_density'] as num?;
+        print('🔍 speech_density: $speechDensity');
+        if (speechDensity != null) {
+          _likability = _mapDensityToLikability(speechDensity.toDouble());
+          print('📊 호감도 업데이트: $_likability (밀도: ${speechDensity.toStringAsFixed(2)})');
+        }
+      } else {
+        print('⚠️ speech_metrics가 metadata에 없습니다');
+        print('⚠️ 사용 가능한 키들: ${metadata.keys.toList()}');
+      }
+      
+      // emotion_analysis 처리 (있는 경우)
+      final emotionAnalysis = metadata['emotion_analysis'] as Map<String, dynamic>?;
+      if (emotionAnalysis != null) {
+        final emotion = emotionAnalysis['emotion'] as String?;
+        if (emotion != null) {
+          _emotionState = emotion;
+          print('📊 감정 분석 업데이트: $_emotionState');
+        }
+      }
+      
+      // 텍스트 내용 기반 피드백 생성
+      final text = response.text ?? '';
+      if (text.isNotEmpty) {
+        _generateTextBasedFeedback(text, speechMetrics);
+        
+        // 💡 텍스트 내용 기반 추천 토픽 업데이트
+        _updateSuggestedTopics(text, speechMetrics);
+      }
+      
+      print('🔍 최종 업데이트된 값들 - 속도: $_speakingSpeed, 감정: $_emotionState, 관심: $_interest, 호감: $_likability');
+      
+      // 🚀 햅틱 피드백 전송
+      _sendImmediateHapticFeedback(
+        prevSpeakingSpeed: prevSpeakingSpeed,
+        prevEmotionState: prevEmotionState,
+        prevInterest: prevInterest,
+        prevLikability: prevLikability,
+        speechMetrics: speechMetrics,
+      );
+      
+      print('🔍 _updateAnalysisFromSTT 함수 완료');
+      
+    } catch (e) {
+      print('❌ STT 분석 데이터 처리 오류: $e');
+      print('❌ 스택 트레이스: ${StackTrace.current}');
+    }
+  }
+
+  /// 말하기 속도를 직관적인 텍스트로 변환
+  String _getSpeedText(int wpm) {
+    if (wpm == 0) return '측정 중';
+    
+    if (wpm < 80) {
+      return '천천히 ($wpm단어/분)';
+    } else if (wpm < 120) {
+      return '적당히 ($wpm단어/분)';
+    } else if (wpm < 160) {
+      return '보통 ($wpm단어/분)';
+    } else if (wpm < 200) {
+      return '빠르게 ($wpm단어/분)';
+    } else {
+      return '매우 빠르게 ($wpm단어/분)';
+    }
+  }
+
+  /// HaptiTalk 설계 문서 기반 햅틱 피드백 전송 시스템
+  Future<void> _sendImmediateHapticFeedback({
+    required int prevSpeakingSpeed,
+    required String prevEmotionState,
+    required int prevInterest,
+    required int prevLikability,
+    Map<String, dynamic>? speechMetrics,
+  }) async {
+    if (!_isWatchConnected) {
+      print('⚠️ Watch 연결 안됨, 햅틱 피드백 스킵');
+      return;
+    }
+
+    final now = DateTime.now();
+    List<Map<String, dynamic>> hapticEvents = [];
+
+    // 📊 S1: 속도 조절 패턴 (화자 행동)
+    final speedDiff = (_speakingSpeed - prevSpeakingSpeed).abs();
+    if (speedDiff >= 20 && _canSendHaptic('speaker', now)) {
+      if (_speakingSpeed >= 160) {  // 매우 빠름
+        hapticEvents.add({
+          'category': 'speaker',
+          'patternId': 'S1',
+          'message': '🚀 말하기 속도가 너무 빨라요! 조금 천천히 해보세요',
+          'priority': 'high',
+          'pattern': 'speed_control'
+        });
+      }
+    }
+
+    // 📊 R1: 호감도 상승 패턴 (상대방 반응)
+    final likabilityDiff = _likability - prevLikability;
+    if (likabilityDiff >= 15 && _canSendHaptic('reaction', now)) {
+      if (_likability >= 80) {
+        hapticEvents.add({
+          'category': 'reaction',
+          'patternId': 'R1',
+          'message': '🎉 환상적인 대화입니다!',
+          'priority': 'high',
+          'pattern': 'likability_high'
+        });
+      } else if (_likability >= 60) {
+        hapticEvents.add({
+          'category': 'reaction',
+          'patternId': 'R1',
+          'message': '💕 호감도가 상승했어요! ($_likability%)',
+          'priority': 'high',
+          'pattern': 'likability_up'
+        });
+      }
+    }
+
+    // 📊 R2: 관심도 하락 패턴 (상대방 반응)
+    final interestDiff = _interest - prevInterest;
+    if (interestDiff <= -20 && _canSendHaptic('reaction', now)) {
+      hapticEvents.add({
+        'category': 'reaction',
+        'patternId': 'R2',
+        'message': '⚠️ 상대방의 관심도가 떨어지고 있어요',
+        'priority': 'high',
+        'pattern': 'interest_down'
+      });
+    }
+
+    // 📊 감정 상태 변화 감지 (상대방 반응)
+    if (_emotionState != prevEmotionState && _emotionState != '대기 중' && _canSendHaptic('reaction', now)) {
+      hapticEvents.add({
+        'category': 'reaction',
+        'patternId': 'R3',
+        'message': '😊 감정 상태: $_emotionState',
+        'priority': 'medium',
+        'pattern': 'emotion_change'
+      });
+    }
+
+    // 📊 F2: 침묵 관리 패턴 (대화 흐름) - 별도 타이머에서 처리 예정
+    // 📊 L1: 경청 강화 패턴 (청자 행동) - 추후 구현
+    // 📊 L3: 질문 제안 패턴 (청자 행동) - 추후 구현
+
+    // 🚀 우선순위별 햅틱 이벤트 전송 (최대 2개)
+    if (hapticEvents.isNotEmpty) {
+      // 우선순위 정렬 (high > medium > low)
+      hapticEvents.sort((a, b) {
+        final priorityOrder = {'high': 3, 'medium': 2, 'low': 1};
+        return priorityOrder[b['priority']]!.compareTo(priorityOrder[a['priority']]!);
+      });
+
+      // 최대 2개의 이벤트만 전송 (배터리 효율성)
+      final eventsToSend = hapticEvents.take(2).toList();
+      
+      for (var event in eventsToSend) {
+        await _sendHapticWithPattern(
+          message: event['message'],
+          pattern: event['pattern'],
+          category: event['category'],
+          patternId: event['patternId']
+        );
+        
+        // 카테고리별 마지막 전송 시간 업데이트
+        _lastHapticByCategory[event['category']] = now;
+        
+        print('📳 [${event['patternId']}] ${event['category']} 햅틱 전송: ${event['message']}');
+        
+        // 이벤트 간 간격 (500ms)
+        if (eventsToSend.length > 1) {
+          await Future.delayed(Duration(milliseconds: 500));
+        }
+      }
+      
+      print('✅ 햅틱 피드백 전송 완료 - ${eventsToSend.length}개 이벤트');
+    }
+  }
+
+  /// 카테고리별 햅틱 전송 가능 여부 확인
+  bool _canSendHaptic(String category, DateTime now) {
+    final lastSent = _lastHapticByCategory[category];
+    if (lastSent == null) return true;
+    
+    // 카테고리별 다른 쿨다운 시간
+    final cooldownSeconds = {
+      'speaker': 10,    // 화자 행동: 10초
+      'listener': 15,   // 청자 행동: 15초  
+      'flow': 20,       // 대화 흐름: 20초
+      'reaction': 8,    // 상대방 반응: 8초 (가장 중요)
+    };
+    
+    final cooldown = cooldownSeconds[category] ?? _hapticCooldownSeconds;
+    return now.difference(lastSent).inSeconds >= cooldown;
+  }
+
+  /// 설계 문서 기반 패턴별 햅틱 전송
+  Future<void> _sendHapticWithPattern({
+    required String message,
+    required String pattern,
+    required String category, 
+    required String patternId
+  }) async {
+    try {
+      // Watch에 패턴 정보와 함께 전송
+      await _watchService.sendHapticFeedbackWithPattern(
+        message: message,
+        pattern: pattern,
+        category: category,
+        patternId: patternId
+      );
+    } catch (e) {
+      print('❌ 패턴 햅틱 전송 실패: $e');
+      // 폴백: 기본 햅틱 전송
+      await _watchService.sendHapticFeedback(message);
+    }
+  }
+
+  /// 속도 카테고리를 감정으로 매핑
+  String _mapSpeedToEmotion(String speedCategory) {
+    switch (speedCategory) {
+      case 'very_slow':
+        return '침착함';
+      case 'slow':
+        return '안정적';
+      case 'normal':
+        return '자연스러움';
+      case 'fast':
+        return '활발함';
+      case 'very_fast':
+        return '흥미로움';
+      default:
+        return '대기 중';
+    }
+  }
+
+  /// 말하기 패턴을 관심도로 매핑 (0-100)
+  int _mapPatternToInterest(String speechPattern) {
+    switch (speechPattern) {
+      case 'very_sparse':
+        return 30; // 띄엄띄엄 말하면 관심도 낮음
+      case 'staccato':
+        return 50; // 끊어서 말하면 보통
+      case 'normal':
+        return 70; // 일반적이면 적당한 관심
+      case 'continuous':
+        return 85; // 연속적이면 높은 관심
+      case 'steady':
+        return 80; // 일정하면 안정적 관심
+      case 'variable':
+        return 75; // 변화가 있으면 적당한 관심
+      default:
+        return 0;
+    }
+  }
+
+  /// 발화 밀도를 호감도로 매핑 (0-100)
+  int _mapDensityToLikability(double speechDensity) {
+    if (speechDensity < 0.3) {
+      return 20; // 발화 밀도가 낮으면 호감도 낮음
+    } else if (speechDensity < 0.5) {
+      return 40;
+    } else if (speechDensity < 0.7) {
+      return 60;
+    } else if (speechDensity < 0.8) {
+      return 80;
+    } else {
+      return 90; // 발화 밀도가 높으면 호감도 높음
+    }
+  }
+
+  /// 텍스트 내용 기반 피드백 생성
+  void _generateTextBasedFeedback(String text, Map<String, dynamic>? speechMetrics) {
+    String feedback = '';
+    
+    // 말하기 속도 피드백
+    if (speechMetrics != null) {
+      final speedCategory = speechMetrics['speed_category'] as String?;
+      final evaluationWpm = speechMetrics['evaluation_wpm'] as num?;
+      
+      if (speedCategory == 'very_fast' && evaluationWpm != null) {
+        feedback = '말하기 속도가 조금 빠른 편입니다. 천천히 말해보세요';
+      } else if (speedCategory == 'very_slow') {
+        feedback = '조금 더 활발하게 대화해보세요';
+      } else if (speedCategory == 'normal') {
+        feedback = '자연스러운 말하기 속도입니다';
+      }
+      
+      // 발화 패턴 피드백
+      final speechPattern = speechMetrics['speech_pattern'] as String?;
+      if (speechPattern == 'very_sparse') {
+        if (feedback.isNotEmpty) feedback += '\n';
+        feedback += '더 연결된 대화를 시도해보세요';
+      }
+    }
+    
+    // 텍스트 길이 기반 피드백
+    if (text.length > 100) {
+      if (feedback.isNotEmpty) feedback += '\n';
+      feedback += '좋습니다! 적극적으로 대화하고 있어요';
+    }
+    
+    if (feedback.isNotEmpty) {
+      _feedback = feedback;
+    }
+  }
+
+  /// STT 결과를 realtime-service로 전송
+  Future<void> _sendToRealtimeService(STTResponse response) async {
+    if (!_isRealtimeConnected) {
+      print('⚠️ realtime-service 연결 안됨, STT 결과 전송 스킵');
+      return;
+    }
+
+    try {
+      // AuthService에서 실제 액세스 토큰 가져오기
+      final authService = AuthService();
+      final accessToken = await authService.getAccessToken();
+      
+      if (accessToken == null) {
+        print('❌ STT 결과 전송 실패: 액세스 토큰 없음');
+        return;
+      }
+      
+      final success = await _realtimeService.sendSTTResult(
+        sessionId: widget.sessionId,
+        sttResponse: response,
+        scenario: _currentScenario,
+        language: 'ko',
+        accessToken: accessToken,
+      );
+      
+      if (success) {
+        print('✅ STT 결과를 realtime-service로 전송 성공');
+      } else {
+        print('❌ STT 결과 realtime-service 전송 실패');
+      }
+    } catch (e) {
+      print('❌ STT 결과 전송 오류: $e');
+    }
   }
 
   void _startTimer() {
@@ -110,43 +850,6 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     }
   }
 
-  void _startAnalysis() {
-    // 실제 앱에서는 여기서 음성 인식 및 실시간 분석 시작
-    // 예시 데이터로 대체
-    Future.delayed(const Duration(seconds: 3), () {
-      setState(() {
-        _transcription =
-            '저는 평소에 여행을 좋아해서 시간이 날 때마다\n이곳저곳 다니는 편이에요. 사진 찍는 것도 좋\n아해서 여행지에서 사진을 많이 찍어요. 특히\n자연 경관이 아름다운 곳이나 역사적인 장소를\n방문하는 걸 좋아합니다. 최근에는 제주도에 다\n녀왔는데, 정말 예뻤어요. 다음에는 어디로 여\n행 가보셨나요?';
-        _feedback = '말하기 속도가 빨라지고 있어요. 좀 더 천천히 말해보세요.';
-      });
-
-      // Watch에 피드백 전송
-      _syncWithWatch();
-    });
-
-    // 주기적으로 분석 데이터 업데이트 시뮬레이션
-    Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      setState(() {
-        // 랜덤하게 지표 변경 (실제로는 AI 분석 결과)
-        _likability =
-            (_likability + (DateTime.now().millisecond % 10 - 5)).clamp(0, 100);
-        _interest =
-            (_interest + (DateTime.now().millisecond % 8 - 4)).clamp(0, 100);
-        _speakingSpeed = (_speakingSpeed + (DateTime.now().millisecond % 6 - 3))
-            .clamp(50, 150);
-
-        // 감정 상태 변경
-        final emotions = ['긍정적', '중립적', '부정적', '흥미로운', '집중적'];
-        _emotionState = emotions[DateTime.now().millisecond % emotions.length];
-      });
-    });
-  }
-
   String _formatTime(int seconds) {
     int hours = seconds ~/ 3600;
     int minutes = (seconds % 3600) ~/ 60;
@@ -154,15 +857,37 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
-  void _toggleRecording() {
-    setState(() {
-      _isRecording = !_isRecording;
-    });
+  void _toggleRecording() async {
+    if (!_isAudioInitialized) {
+      _showErrorSnackBar('오디오 서비스가 초기화되지 않았습니다');
+      return;
+    }
+
+    if (_isRecording) {
+      // 녹음 중지
+      await _audioService.stopRecording();
+      setState(() {
+        _isRecording = false;
+      });
+    } else {
+      // 녹음 시작
+      final success = await _audioService.startRealTimeRecording();
+      if (success) {
+        setState(() {
+          _isRecording = true;
+        });
+      } else {
+        _showErrorSnackBar('녹음 시작에 실패했습니다');
+      }
+    }
   }
 
   void _endSession() async {
     _timer.cancel();
     _watchSyncTimer.cancel();
+
+    // 오디오 녹음 중지
+    await _audioService.stopRecording();
 
     // Watch에 세션 종료 알림
     try {
@@ -182,6 +907,245 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       (route) => false,
       arguments: {'initialTabIndex': 1},
     );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  /// Watch 세션 시작 및 테스트 햅틱 전송
+  Future<void> _startWatchSession() async {
+    try {
+      print('🚀 Watch 세션 시작 프로세스 시작');
+      
+      // 1. Watch 연결 상태 재확인
+      final isConnected = await _watchService.isWatchConnected();
+      setState(() {
+        _isWatchConnected = isConnected;
+      });
+      
+      if (!isConnected) {
+        print('⚠️ Watch가 연결되지 않아 세션 시작을 건너뛰니다');
+        return;
+      }
+      
+      // 2. Watch 세션 시작 (자동 화면 전환 포함)
+      await _watchService.startSession('소개팅');
+      print('✅ Watch 세션 시작 신호 전송 완료');
+      
+      // 3. 추가 대기 시간 (Watch 앱 화면 전환 대기)
+      await Future.delayed(Duration(seconds: 3));
+      
+      // 4. 세션 시작 햅틱 피드백 전송
+      if (_isWatchConnected) {
+        await _watchService.sendHapticFeedback('🎙️ HaptiTalk 실시간 분석이 시작되었습니다!');
+        print('📳 세션 시작 햅틱 피드백 전송 완료');
+        
+        // 5. 음성 인식 안내 햅틱 (5초 후)
+        await Future.delayed(Duration(seconds: 3));
+        await _watchService.sendHapticFeedback('💡 음성을 인식하고 있습니다. 자연스럽게 대화해보세요!');
+        print('📳 음성 인식 안내 햅틱 피드백 전송 완료');
+        
+        // 6. 초기 분석 데이터 동기화
+        await Future.delayed(Duration(seconds: 2));
+        await _watchService.sendRealtimeAnalysis(
+          likability: _likability,
+          interest: _interest,
+          speakingSpeed: _speakingSpeed,
+          emotion: _emotionState,
+          feedback: '실시간 분석을 시작합니다',
+          elapsedTime: _formatTime(_seconds),
+        );
+        print('📊 초기 분석 데이터 동기화 완료');
+        
+      } else {
+        print('⚠️ Watch가 연결되지 않아 햅틱 피드백을 보낼 수 없습니다');
+      }
+      
+      print('🎉 Watch 세션 시작 프로세스 완료');
+      
+    } catch (e) {
+      print('❌ Watch 세션 시작 실패: $e');
+      _showErrorSnackBar('Watch 세션 시작에 실패했습니다: $e');
+    }
+  }
+
+  /// 텍스트 내용 기반 추천 토픽 업데이트
+  void _updateSuggestedTopics(String text, Map<String, dynamic>? speechMetrics) {
+    try {
+      // 기본 토픽 풀
+      List<String> allTopics = [
+        // 관심사 & 취미
+        '여행 경험', '좋아하는 음식', '영화/드라마', '음악 취향', '운동/스포츠',
+        '독서/책', '사진 취미', '요리', '카페 탐방', '산책/등산',
+        
+        // 일상 & 라이프스타일  
+        '주말 계획', '최근 일상', '좋아하는 장소', '스트레스 해소법', '반려동물',
+        '집 근처 맛집', '최근 배운 것', '인상 깊은 경험', '취미 생활', '건강 관리',
+        
+        // 깊은 대화
+        '인생 목표', '가치관', '성격 이야기', '어린 시절 추억', '가족 이야기',
+        '미래 계획', '꿈과 희망', '좋아하는 계절', '행복한 순간', '감사한 일',
+        
+        // 가벼운 토픽
+        '날씨 이야기', '최근 뉴스', '유행하는 것', '재미있는 일화', '우연한 발견'
+      ];
+      
+      Set<String> newTopics = <String>{};
+      
+      // 1. 텍스트 키워드 기반 추천
+      if (text.contains('여행') || text.contains('휴가') || text.contains('여행지')) {
+        newTopics.addAll(['여행 경험', '좋아하는 여행지', '해외 경험', '국내 여행']);
+      }
+      
+      if (text.contains('음식') || text.contains('맛집') || text.contains('먹') || text.contains('요리')) {
+        newTopics.addAll(['좋아하는 음식', '맛집 추천', '요리 취미', '집 근처 맛집']);
+      }
+      
+      if (text.contains('영화') || text.contains('드라마') || text.contains('넷플릭스')) {
+        newTopics.addAll(['영화/드라마', '최근 본 영화', '좋아하는 장르', '넷플릭스 추천']);
+      }
+      
+      if (text.contains('운동') || text.contains('헬스') || text.contains('스포츠')) {
+        newTopics.addAll(['운동/스포츠', '헬스장 이야기', '좋아하는 운동', '건강 관리']);
+      }
+      
+      if (text.contains('일') || text.contains('직장') || text.contains('회사')) {
+        newTopics.addAll(['직장 생활', '업무 스트레스', '커리어 고민', '일과 삶의 균형']);
+      }
+      
+      if (text.contains('가족') || text.contains('부모') || text.contains('형제')) {
+        newTopics.addAll(['가족 이야기', '어린 시절 추억', '가족과의 시간', '부모님 이야기']);
+      }
+      
+      // 2. 분석 결과 기반 추천
+      if (speechMetrics != null) {
+        final speedCategory = speechMetrics['speed_category'] as String?;
+        final speechPattern = speechMetrics['speech_pattern'] as String?;
+        
+        // 말하기 속도에 따른 토픽 조정
+        if (speedCategory == 'very_fast') {
+          // 빠른 속도 → 가벼운 토픽 추천
+          newTopics.addAll(['날씨 이야기', '재미있는 일화', '최근 일상', '주말 계획']);
+        } else if (speedCategory == 'slow' || speedCategory == 'very_slow') {
+          // 느린 속도 → 깊은 대화 토픽 추천
+          newTopics.addAll(['인생 목표', '가치관', '행복한 순간', '감사한 일']);
+        }
+        
+        // 말하기 패턴에 따른 토픽 조정
+        if (speechPattern == 'continuous') {
+          // 연속적 → 흥미로운 토픽
+          newTopics.addAll(['인상 깊은 경험', '최근 배운 것', '새로운 도전', '흥미로운 발견']);
+        } else if (speechPattern == 'variable') {
+          // 변화무쌍 → 다양한 토픽
+          newTopics.addAll(['취미 생활', '다양한 경험', '새로운 시도', '창의적 활동']);
+        }
+      }
+      
+      // 3. 감정 상태에 따른 토픽 조정
+      if (_emotionState == '활발함' || _emotionState == '흥미로움') {
+        newTopics.addAll(['새로운 도전', '흥미로운 경험', '모험 이야기', '신나는 계획']);
+      } else if (_emotionState == '침착함' || _emotionState == '안정적') {
+        newTopics.addAll(['평온한 시간', '좋은 습관', '마음 챙김', '여유로운 일상']);
+      }
+      
+      // 4. 호감도/관심도에 따른 토픽 조정
+      if (_likability >= 70 && _interest >= 70) {
+        // 높은 호감도 → 개인적인 토픽
+        newTopics.addAll(['꿈과 희망', '소중한 사람', '의미 있는 경험', '인생 철학']);
+      } else if (_likability < 50 || _interest < 50) {
+        // 낮은 호감도 → 가벼운 공통 토픽
+        newTopics.addAll(['날씨 이야기', '유행하는 것', '일상 소소한 일', '가벼운 농담']);
+      }
+      
+      // 5. 기존 토픽과 겹치지 않도록 필터링 및 무작위 선택
+      final currentTopicsSet = _suggestedTopics.toSet();
+      newTopics.removeAll(currentTopicsSet);
+      
+      if (newTopics.isEmpty) {
+        // 새로운 토픽이 없으면 전체 풀에서 선택
+        allTopics.removeWhere((topic) => currentTopicsSet.contains(topic));
+        newTopics.addAll(allTopics.take(5));
+      }
+      
+      // 최대 5개 토픽 선택
+      final topicsList = newTopics.toList();
+      topicsList.shuffle();
+      _suggestedTopics = topicsList.take(5).toList();
+      
+      print('💡 추천 토픽 업데이트: $_suggestedTopics');
+      
+    } catch (e) {
+      print('❌ 추천 토픽 업데이트 실패: $e');
+    }
+  }
+
+  /// 🚀 Watch 메시지 스트림 구독
+  void _subscribeToWatchMessages() {
+    print('🔗 Watch 메시지 스트림 구독 시작');
+    
+    try {
+      _watchMessageSubscription = _watchService.watchMessages.listen(
+        (message) {
+          print('📨 핸드폰에서 Watch 메시지 수신: $message');
+          if (mounted) {
+            _handleWatchMessage(message);
+          }
+        },
+        onError: (error) {
+          print('❌ Watch 메시지 스트림 에러: $error');
+        },
+        onDone: () {
+          print('📡 Watch 메시지 스트림 종료');
+        },
+      );
+      
+      print('✅ Watch 메시지 스트림 구독 완료');
+      
+    } catch (e) {
+      print('❌ Watch 메시지 스트림 구독 실패: $e');
+    }
+  }
+
+  /// 🚀 Watch 메시지 처리
+  void _handleWatchMessage(Map<String, dynamic> message) {
+    final action = message['action'] as String?;
+    
+    switch (action) {
+      case 'watchSessionStarted':
+        print('🎉 Watch에서 세션 진입 완료 신호 수신');
+        final sessionType = message['sessionType'] as String?;
+        setState(() {
+          _feedback = 'Apple Watch에서 $sessionType 세션이 시작되었습니다!';
+        });
+        
+        // 5초 후 피드백 메시지 클리어
+        Timer(Duration(seconds: 5), () {
+          if (mounted) {
+            setState(() {
+              _feedback = '';
+            });
+          }
+        });
+        break;
+        
+      case 'watchConnected':
+        print('📱 Watch 연결 신호 수신');
+        setState(() {
+          _isWatchConnected = true;
+        });
+        break;
+        
+      default:
+        print('⚠️ 알 수 없는 Watch 메시지: $action');
+        break;
+    }
   }
 
   @override
@@ -259,6 +1223,24 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
           const Spacer(),
           Row(
             children: [
+              // STT 연결 상태
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _audioService.isSTTConnected ? Colors.green : Colors.grey,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'STT',
+                style: TextStyle(
+                  color: AppColors.lightText,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 15),
               // Watch 연결 상태
               Container(
                 width: 8,
@@ -308,13 +1290,53 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
-        _transcription,
-        style: TextStyle(
-          color: AppColors.lightText,
-          fontSize: 16,
-          height: 1.5,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.text_snippet,
+                color: AppColors.lightText,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '실시간 음성 인식',
+                style: TextStyle(
+                  color: AppColors.lightText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '30초 단위',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _transcription.isEmpty ? '음성을 30초 단위로 분석하고 있습니다...' : _transcription,
+            style: TextStyle(
+              color: _transcription.isEmpty ? AppColors.disabledText : AppColors.lightText,
+              fontSize: 16,
+              height: 1.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -364,9 +1386,9 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
               Expanded(
                 child: _buildMetricCard(
                   title: '말하기 속도',
-                  value: '$_speakingSpeed%',
+                  value: _getSpeedText(_speakingSpeed),
                   icon: Icons.speed,
-                  progressValue: _speakingSpeed / 100,
+                  progressValue: _speakingSpeed > 0 ? _speakingSpeed / 200 : 0,
                 ),
               ),
             ],
@@ -560,8 +1582,10 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
             backgroundColor: Colors.grey[700],
             child: IconButton(
               icon: const Icon(Icons.pause, color: Colors.white),
-              onPressed: () {
-                // 세션 일시 정지
+              onPressed: () async {
+                if (_isRecording) {
+                  await _audioService.pauseRecording();
+                }
               },
             ),
           ),
@@ -575,7 +1599,9 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
           ),
           CircleAvatar(
             radius: 25,
-            backgroundColor: Colors.grey[700],
+            backgroundColor: _isRecording 
+                ? Colors.red 
+                : (_isAudioInitialized ? Colors.green : Colors.grey[700]),
             child: IconButton(
               icon: Icon(
                 _isRecording ? Icons.mic : Icons.mic_off,

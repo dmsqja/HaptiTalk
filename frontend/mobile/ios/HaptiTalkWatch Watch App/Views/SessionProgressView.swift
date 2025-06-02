@@ -203,6 +203,8 @@ struct SessionProgressView: View {
                 .padding(.top, -10)
             }
             .padding(.top, -10)
+            
+            // 🎨 시각적 피드백 오버레이는 이제 ContentView에서 글로벌로 처리됨
         }
         .fullScreenCover(isPresented: $showSessionSummary) {
             SessionSummaryView(
@@ -220,8 +222,20 @@ struct SessionProgressView: View {
         .onChange(of: appState.showHapticFeedback) { _, newValue in
             if newValue {
                 showHapticNotification(message: appState.hapticFeedbackMessage)
+                // 시각적 피드백은 AppState에서 자동으로 관리됨
                 appState.showHapticFeedback = false
             }
+        }
+        .onChange(of: appState.showVisualFeedback) { _, newValue in
+            // 시각적 피드백 상태 변화 감지 및 로깅
+            if newValue {
+                print("🎨 Watch: 시각적 피드백 시작 - 패턴: \(appState.currentVisualPattern)")
+            } else {
+                print("🎨 Watch: 시각적 피드백 종료")
+            }
+        }
+        .onAppear {
+            initializeSession()
         }
     }
     
@@ -271,6 +285,38 @@ struct SessionProgressView: View {
         
         // AppState에 세션 요약 저장
         appState.saveSessionSummary(summary: summary)
+    }
+    
+    private func initializeSession() {
+        print("🚀 Watch: SessionProgressView 화면 진입, 세션 초기화 시작")
+        
+        // 1. AppState에서 세션 정보 가져오기
+        sessionMode = appState.sessionType
+        
+        // 2. 타이머 초기화 (만약 이미 진행 중이 아니라면)
+        if sessionTimer == 0 {
+            sessionTimer = 0
+            formattedTime = "00:00:00"
+            print("🕐 Watch: 세션 타이머 초기화 완료")
+        }
+        
+        // 3. 세션 시작 환영 메시지 표시
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            showHapticNotification(message: "🎙️ \(sessionMode) 세션이 시작되었습니다!")
+            print("📳 Watch: 세션 시작 환영 메시지 표시")
+        }
+        
+        // 4. iPhone에 Watch 앱 진입 완료 신호 전송
+        let sessionStartedMessage = [
+            "action": "watchSessionStarted",
+            "sessionType": sessionMode,
+            "timestamp": Date().timeIntervalSince1970
+        ] as [String: Any]
+        
+        appState.sendToiPhone(message: sessionStartedMessage)
+        print("📡 Watch: iPhone에 세션 진입 완료 신호 전송")
+        
+        print("✅ Watch: 세션 초기화 완료")
     }
 }
 

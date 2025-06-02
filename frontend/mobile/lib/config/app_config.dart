@@ -56,6 +56,23 @@ class AppConfig {
     }
   }
 
+  // STT 서버 설정 (젯슨 서버)
+  static String get sttBaseUrl {
+    if (kDebugMode) {
+      final url = dotenv.env['DEV_STT_BASE_URL'];
+      if (url == null || url.isEmpty) {
+        throw Exception('DEV_STT_BASE_URL 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.');
+      }
+      return url;
+    } else {
+      final url = dotenv.env['STT_BASE_URL'];
+      if (url == null || url.isEmpty) {
+        throw Exception('STT_BASE_URL 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.');
+      }
+      return url;
+    }
+  }
+
   // JWT 설정 - 환경변수에서만 가져오기 (기본값 없음)
   static String get jwtAccessSecret {
     final secret = dotenv.env['JWT_ACCESS_SECRET'];
@@ -108,6 +125,7 @@ class AppConfig {
       'apiBaseUrl': apiBaseUrl,
       'wsBaseUrl': wsBaseUrl,
       'aiBaseUrl': aiBaseUrl,
+      'sttBaseUrl': sttBaseUrl,
     };
   }
 
@@ -118,6 +136,7 @@ class AppConfig {
       apiBaseUrl;
       wsBaseUrl;
       aiBaseUrl;
+      sttBaseUrl;
       return true;
     } catch (e) {
       return false;
@@ -131,6 +150,7 @@ class AppConfig {
       print('  - API Base URL: $apiBaseUrl');
       print('  - WebSocket URL: $wsBaseUrl');
       print('  - AI Base URL: $aiBaseUrl');
+      print('  - STT Base URL: $sttBaseUrl');
       print('  - Debug Mode: $isDebugMode');
       print('  - App Version: $appVersion');
     } catch (e) {

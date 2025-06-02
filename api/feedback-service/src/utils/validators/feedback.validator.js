@@ -46,6 +46,65 @@ const generateFeedback = [
 ];
 
 /**
+ * STT 분석 결과 처리 유효성 검사
+ */
+const processSTTAnalysis = [
+    body('sessionId')
+        .isString().withMessage('세션 ID는 문자열이어야 합니다.')
+        .isLength({ min: 1 }).withMessage('세션 ID는 필수입니다.'),
+
+    body('text')
+        .isString().withMessage('텍스트는 문자열이어야 합니다.')
+        .isLength({ min: 1 }).withMessage('텍스트는 필수입니다.'),
+
+    body('speechMetrics')
+        .optional()
+        .isObject().withMessage('음성 메트릭은 객체여야 합니다.'),
+
+    body('speechMetrics.evaluationWpm')
+        .optional()
+        .isFloat({ min: 0, max: 1000 }).withMessage('말하기 속도(WPM)는 0~1000 사이의 숫자여야 합니다.'),
+
+    body('speechMetrics.pauseMetrics')
+        .optional()
+        .isObject().withMessage('일시정지 메트릭은 객체여야 합니다.'),
+
+    body('speechMetrics.pauseMetrics.count')
+        .optional()
+        .isInt({ min: 0 }).withMessage('일시정지 횟수는 0 이상의 정수여야 합니다.'),
+
+    body('speechMetrics.pauseMetrics.averageDuration')
+        .optional()
+        .isFloat({ min: 0 }).withMessage('평균 일시정지 지속시간은 0 이상의 숫자여야 합니다.'),
+
+    body('emotionAnalysis')
+        .optional()
+        .isObject().withMessage('감정 분석은 객체여야 합니다.'),
+
+    body('emotionAnalysis.primaryEmotion')
+        .optional()
+        .isObject().withMessage('주요 감정은 객체여야 합니다.'),
+
+    body('emotionAnalysis.primaryEmotion.emotionKr')
+        .optional()
+        .isString().withMessage('감정(한국어)은 문자열이어야 합니다.'),
+
+    body('emotionAnalysis.primaryEmotion.probability')
+        .optional()
+        .isFloat({ min: 0, max: 1 }).withMessage('감정 확률은 0~1 사이의 숫자여야 합니다.'),
+
+    body('scenario')
+        .optional()
+        .isString().withMessage('시나리오는 문자열이어야 합니다.')
+        .isIn(['interview', 'dating', 'business', 'general']).withMessage('유효하지 않은 시나리오입니다.'),
+
+    body('language')
+        .optional()
+        .isString().withMessage('언어는 문자열이어야 합니다.')
+        .isIn(['ko', 'en']).withMessage('지원하지 않는 언어입니다.'),
+];
+
+/**
  * 피드백 수신 확인 유효성 검사
  */
 const acknowledgeFeedback = [
@@ -61,5 +120,6 @@ const acknowledgeFeedback = [
 
 module.exports = {
     generateFeedback,
+    processSTTAnalysis,
     acknowledgeFeedback
 };

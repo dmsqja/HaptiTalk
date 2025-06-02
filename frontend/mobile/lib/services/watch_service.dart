@@ -163,11 +163,14 @@ class WatchService {
       await _checkConnectionStatus(); // 세션 시작 전 연결 상태 확인
 
       final result = await _channel.invokeMethod('startSession', {
+        'action': 'startSession',  // 🚀 명확한 액션 추가
         'sessionType': sessionType,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,  // 🕐 타임스탬프 추가
+        'autoNavigate': true,  // 🔄 자동 화면 전환 플래그
       });
-      print('Watch 세션 시작: $sessionType - 결과: $result');
+      print('🚀 Watch 세션 시작 신호 전송: $sessionType - 결과: $result');
     } catch (e) {
-      print('Watch 세션 시작 실패: $e');
+      print('❌ Watch 세션 시작 실패: $e');
       rethrow;
     }
   }
@@ -183,16 +186,45 @@ class WatchService {
     }
   }
 
-  // 햅틱 피드백을 Watch에 전송
+  // 햅틱 피드백 전송 (기본)
   Future<void> sendHapticFeedback(String message) async {
     try {
+      await _checkConnectionStatus(); // 햅틱 전송 전 연결 상태 확인
+
       final result = await _channel.invokeMethod('sendHapticFeedback', {
+        'action': 'hapticFeedback',
         'message': message,
       });
       print('Watch 햅틱 피드백 전송: $message - 결과: $result');
     } catch (e) {
-      print('Watch 햅틱 피드백 실패: $e');
+      print('❌ Watch 햅틱 피드백 실패: $e');
       rethrow;
+    }
+  }
+
+  // 🎯 HaptiTalk 설계 문서 기반 패턴별 햅틱 피드백 전송
+  Future<void> sendHapticFeedbackWithPattern({
+    required String message,
+    required String pattern,
+    required String category,
+    required String patternId
+  }) async {
+    try {
+      await _checkConnectionStatus();
+
+      final result = await _channel.invokeMethod('sendHapticFeedbackWithPattern', {
+        'action': 'hapticFeedbackWithPattern',
+        'message': message,
+        'pattern': pattern,
+        'category': category,
+        'patternId': patternId,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+      print('🎯 Watch 패턴 햅틱 전송 [$patternId/$category]: $message - 결과: $result');
+    } catch (e) {
+      print('❌ Watch 패턴 햅틱 실패: $e, 기본 햅틱으로 폴백');
+      // 패턴 전송 실패 시 기본 햅틱으로 폴백
+      await sendHapticFeedback(message);
     }
   }
 
