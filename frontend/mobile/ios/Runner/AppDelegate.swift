@@ -88,6 +88,31 @@ import WatchConnectivity
       } else {
         result(FlutterError(code: "INVALID_ARGUMENTS", message: "message is required", details: nil))
       }
+    case "sendHapticFeedbackWithPattern":
+      // 🎯 HaptiTalk 설계 문서 기반 패턴별 햅틱 전송
+      if let args = call.arguments as? [String: Any],
+         let message = args["message"] as? String,
+         let pattern = args["pattern"] as? String,
+         let category = args["category"] as? String,
+         let patternId = args["patternId"] as? String {
+        
+        var watchMessage: [String: Any] = [
+          "action": "hapticFeedbackWithPattern",
+          "message": message,
+          "pattern": pattern,
+          "category": category,
+          "patternId": patternId
+        ]
+        
+        if let timestamp = args["timestamp"] as? Int64 {
+          watchMessage["timestamp"] = timestamp
+        }
+        
+        sendToWatch(message: watchMessage)
+        result("Pattern haptic sent")
+      } else {
+        result(FlutterError(code: "INVALID_ARGUMENTS", message: "message, pattern, category, patternId are required", details: nil))
+      }
     case "sendRealtimeAnalysis":
       if let args = call.arguments as? [String: Any] {
         var message: [String: Any] = ["action": "realtimeAnalysis"]

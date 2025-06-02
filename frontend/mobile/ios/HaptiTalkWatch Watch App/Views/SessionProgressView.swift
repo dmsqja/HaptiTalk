@@ -223,6 +223,9 @@ struct SessionProgressView: View {
                 appState.showHapticFeedback = false
             }
         }
+        .onAppear {
+            initializeSession()
+        }
     }
     
     private func updateTimer() {
@@ -271,6 +274,38 @@ struct SessionProgressView: View {
         
         // AppState에 세션 요약 저장
         appState.saveSessionSummary(summary: summary)
+    }
+    
+    private func initializeSession() {
+        print("🚀 Watch: SessionProgressView 화면 진입, 세션 초기화 시작")
+        
+        // 1. AppState에서 세션 정보 가져오기
+        sessionMode = appState.sessionType
+        
+        // 2. 타이머 초기화 (만약 이미 진행 중이 아니라면)
+        if sessionTimer == 0 {
+            sessionTimer = 0
+            formattedTime = "00:00:00"
+            print("🕐 Watch: 세션 타이머 초기화 완료")
+        }
+        
+        // 3. 세션 시작 환영 메시지 표시
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            showHapticNotification(message: "🎙️ \(sessionMode) 세션이 시작되었습니다!")
+            print("📳 Watch: 세션 시작 환영 메시지 표시")
+        }
+        
+        // 4. iPhone에 Watch 앱 진입 완료 신호 전송
+        let sessionStartedMessage = [
+            "action": "watchSessionStarted",
+            "sessionType": sessionMode,
+            "timestamp": Date().timeIntervalSince1970
+        ] as [String: Any]
+        
+        appState.sendToiPhone(message: sessionStartedMessage)
+        print("📡 Watch: iPhone에 세션 진입 완료 신호 전송")
+        
+        print("✅ Watch: 세션 초기화 완료")
     }
 }
 

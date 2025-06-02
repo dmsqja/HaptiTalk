@@ -43,6 +43,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   List<String> _suggestedTopics = [];
   bool _isAudioInitialized = false;
   StreamSubscription? _sttSubscription;
+  StreamSubscription? _watchMessageSubscription;
 
   // 분석 데이터 (실제 AI 결과로 업데이트)
   String _emotionState = '대기 중';
@@ -51,6 +52,18 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   int _interest = 0;
   String _currentScenario = 'dating'; // 기본 시나리오
 
+  String _lastHapticMessage = '';  // 🚫 중복 햅틱 방지
+  DateTime? _lastHapticTime;  // ⏰ 마지막 햅틱 시간
+  final int _hapticCooldownSeconds = 15;  // 🕐 햅틱 쿨다운 (15초로 단축)
+  
+  // 🎯 햅틱 패턴 카테고리별 마지막 전송 시간
+  Map<String, DateTime> _lastHapticByCategory = {
+    'speaker': DateTime.now().subtract(Duration(hours: 1)),    // 화자 행동 (S)
+    'listener': DateTime.now().subtract(Duration(hours: 1)),   // 청자 행동 (L)  
+    'flow': DateTime.now().subtract(Duration(hours: 1)),       // 대화 흐름 (F)
+    'reaction': DateTime.now().subtract(Duration(hours: 1)),   // 상대방 반응 (R)
+  };
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +71,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     _startTimer();
     _checkWatchConnection();
     _startWatchSync();
+    _subscribeToWatchMessages();
 
     // 초기 추천 주제 설정
     _suggestedTopics = ['여행 경험', '좋아하는 여행지', '사진 취미', '역사적 장소', '제주도 명소'];
@@ -81,6 +95,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     _timer.cancel();
     _watchSyncTimer.cancel();
     _sttSubscription?.cancel();
+    _watchMessageSubscription?.cancel();
     _audioService.dispose();
     _realtimeService.disconnect();
     super.dispose();
@@ -474,7 +489,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       
       print('🔍 최종 업데이트된 값들 - 속도: $_speakingSpeed, 감정: $_emotionState, 관심: $_interest, 호감: $_likability');
       
-      // 📳 중요한 변화가 있을 때 바로 Apple Watch로 햅틱 피드백 전송
+      // 🚀 햅틱 피드백 전송
       _sendImmediateHapticFeedback(
         prevSpeakingSpeed: prevSpeakingSpeed,
         prevEmotionState: prevEmotionState,
@@ -491,7 +506,24 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     }
   }
 
-  /// 중요한 변화 감지 시 즉시 햅틱 피드백 전송
+  /// 말하기 속도를 직관적인 텍스트로 변환
+  String _getSpeedText(int wpm) {
+    if (wpm == 0) return '측정 중';
+    
+    if (wpm < 80) {
+      return '천천히 ($wpm단어/분)';
+    } else if (wpm < 120) {
+      return '적당히 ($wpm단어/분)';
+    } else if (wpm < 160) {
+      return '보통 ($wpm단어/분)';
+    } else if (wpm < 200) {
+      return '빠르게 ($wpm단어/분)';
+    } else {
+      return '매우 빠르게 ($wpm단어/분)';
+    }
+  }
+
+  /// HaptiTalk 설계 문서 기반 햅틱 피드백 전송 시스템
   Future<void> _sendImmediateHapticFeedback({
     required int prevSpeakingSpeed,
     required String prevEmotionState,
@@ -504,81 +536,142 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       return;
     }
 
-    List<String> hapticMessages = [];
+    final now = DateTime.now();
+    List<Map<String, dynamic>> hapticEvents = [];
 
-    try {
-      // 1. 말하기 속도 변화 (20 WPM 이상 차이날 때)
-      if ((_speakingSpeed - prevSpeakingSpeed).abs() >= 20) {
-        if (_speakingSpeed > 180) {
-          hapticMessages.add('🚀 말하기 속도가 너무 빨라요! ($_speakingSpeed WPM)');
-        } else if (_speakingSpeed < 80) {
-          hapticMessages.add('🐌 조금 더 활발하게 대화해보세요 ($_speakingSpeed WPM)');
-        } else if (_speakingSpeed > prevSpeakingSpeed) {
-          hapticMessages.add('📈 말하기 속도가 좋아지고 있어요!');
-        }
+    // 📊 S1: 속도 조절 패턴 (화자 행동)
+    final speedDiff = (_speakingSpeed - prevSpeakingSpeed).abs();
+    if (speedDiff >= 20 && _canSendHaptic('speaker', now)) {
+      if (_speakingSpeed >= 160) {  // 매우 빠름
+        hapticEvents.add({
+          'category': 'speaker',
+          'patternId': 'S1',
+          'message': '🚀 말하기 속도가 너무 빨라요! 조금 천천히 해보세요',
+          'priority': 'high',
+          'pattern': 'speed_control'
+        });
       }
+    }
 
-      // 2. 호감도 변화 (15% 이상 차이날 때)
-      if ((_likability - prevLikability).abs() >= 15) {
-        if (_likability > prevLikability) {
-          hapticMessages.add('💕 호감도가 상승했어요! ($_likability%)');
-        } else {
-          hapticMessages.add('📉 조금 더 적극적으로 대화해보세요');
-        }
+    // 📊 R1: 호감도 상승 패턴 (상대방 반응)
+    final likabilityDiff = _likability - prevLikability;
+    if (likabilityDiff >= 15 && _canSendHaptic('reaction', now)) {
+      if (_likability >= 80) {
+        hapticEvents.add({
+          'category': 'reaction',
+          'patternId': 'R1',
+          'message': '🎉 환상적인 대화입니다!',
+          'priority': 'high',
+          'pattern': 'likability_high'
+        });
+      } else if (_likability >= 60) {
+        hapticEvents.add({
+          'category': 'reaction',
+          'patternId': 'R1',
+          'message': '💕 호감도가 상승했어요! ($_likability%)',
+          'priority': 'high',
+          'pattern': 'likability_up'
+        });
       }
+    }
 
-      // 3. 관심도 변화 (20% 이상 차이날 때)
-      if ((_interest - prevInterest).abs() >= 20) {
-        if (_interest > prevInterest) {
-          hapticMessages.add('⭐ 상대방의 관심을 끌고 있어요! ($_interest%)');
-        }
-      }
+    // 📊 R2: 관심도 하락 패턴 (상대방 반응)
+    final interestDiff = _interest - prevInterest;
+    if (interestDiff <= -20 && _canSendHaptic('reaction', now)) {
+      hapticEvents.add({
+        'category': 'reaction',
+        'patternId': 'R2',
+        'message': '⚠️ 상대방의 관심도가 떨어지고 있어요',
+        'priority': 'high',
+        'pattern': 'interest_down'
+      });
+    }
 
-      // 4. 감정 상태 변화
-      if (_emotionState != prevEmotionState && _emotionState != '대기 중') {
-        hapticMessages.add('😊 감정 상태: $_emotionState');
-      }
+    // 📊 감정 상태 변화 감지 (상대방 반응)
+    if (_emotionState != prevEmotionState && _emotionState != '대기 중' && _canSendHaptic('reaction', now)) {
+      hapticEvents.add({
+        'category': 'reaction',
+        'patternId': 'R3',
+        'message': '😊 감정 상태: $_emotionState',
+        'priority': 'medium',
+        'pattern': 'emotion_change'
+      });
+    }
 
-      // 5. 특별한 패턴 감지
-      if (speechMetrics != null) {
-        final speechPattern = speechMetrics['speech_pattern'] as String?;
-        final speedCategory = speechMetrics['speed_category'] as String?;
+    // 📊 F2: 침묵 관리 패턴 (대화 흐름) - 별도 타이머에서 처리 예정
+    // 📊 L1: 경청 강화 패턴 (청자 행동) - 추후 구현
+    // 📊 L3: 질문 제안 패턴 (청자 행동) - 추후 구현
+
+    // 🚀 우선순위별 햅틱 이벤트 전송 (최대 2개)
+    if (hapticEvents.isNotEmpty) {
+      // 우선순위 정렬 (high > medium > low)
+      hapticEvents.sort((a, b) {
+        final priorityOrder = {'high': 3, 'medium': 2, 'low': 1};
+        return priorityOrder[b['priority']]!.compareTo(priorityOrder[a['priority']]!);
+      });
+
+      // 최대 2개의 이벤트만 전송 (배터리 효율성)
+      final eventsToSend = hapticEvents.take(2).toList();
+      
+      for (var event in eventsToSend) {
+        await _sendHapticWithPattern(
+          message: event['message'],
+          pattern: event['pattern'],
+          category: event['category'],
+          patternId: event['patternId']
+        );
         
-        if (speechPattern == 'very_sparse') {
-          hapticMessages.add('💭 더 연결된 대화를 시도해보세요');
-        } else if (speechPattern == 'continuous' && speedCategory == 'normal') {
-          hapticMessages.add('✨ 완벽한 대화 패턴이에요!');
-        }
+        // 카테고리별 마지막 전송 시간 업데이트
+        _lastHapticByCategory[event['category']] = now;
         
-        if (speedCategory == 'very_fast') {
-          hapticMessages.add('⏰ 잠깐 숨을 고르고 천천히 말해보세요');
-        }
-      }
-
-      // 6. 긍정적인 피드백 (높은 수치일 때)
-      if (_likability >= 80 && _interest >= 80) {
-        hapticMessages.add('🎉 환상적인 대화입니다!');
-      }
-
-      // 햅틱 메시지가 있으면 전송 (최대 2개까지)
-      final messagesToSend = hapticMessages.take(2).toList();
-      for (String message in messagesToSend) {
-        await _watchService.sendHapticFeedback(message);
-        print('📳 즉시 햅틱 피드백 전송: $message');
+        print('📳 [${event['patternId']}] ${event['category']} 햅틱 전송: ${event['message']}');
         
-        // 메시지 간 간격 (0.5초)
-        if (messagesToSend.length > 1) {
+        // 이벤트 간 간격 (500ms)
+        if (eventsToSend.length > 1) {
           await Future.delayed(Duration(milliseconds: 500));
         }
       }
+      
+      print('✅ 햅틱 피드백 전송 완료 - ${eventsToSend.length}개 이벤트');
+    }
+  }
 
-      // 피드백이 있으면 화면에도 표시
-      if (messagesToSend.isNotEmpty) {
-        _feedback = messagesToSend.join('\n');
-      }
+  /// 카테고리별 햅틱 전송 가능 여부 확인
+  bool _canSendHaptic(String category, DateTime now) {
+    final lastSent = _lastHapticByCategory[category];
+    if (lastSent == null) return true;
+    
+    // 카테고리별 다른 쿨다운 시간
+    final cooldownSeconds = {
+      'speaker': 10,    // 화자 행동: 10초
+      'listener': 15,   // 청자 행동: 15초  
+      'flow': 20,       // 대화 흐름: 20초
+      'reaction': 8,    // 상대방 반응: 8초 (가장 중요)
+    };
+    
+    final cooldown = cooldownSeconds[category] ?? _hapticCooldownSeconds;
+    return now.difference(lastSent).inSeconds >= cooldown;
+  }
 
+  /// 설계 문서 기반 패턴별 햅틱 전송
+  Future<void> _sendHapticWithPattern({
+    required String message,
+    required String pattern,
+    required String category, 
+    required String patternId
+  }) async {
+    try {
+      // Watch에 패턴 정보와 함께 전송
+      await _watchService.sendHapticFeedbackWithPattern(
+        message: message,
+        pattern: pattern,
+        category: category,
+        patternId: patternId
+      );
     } catch (e) {
-      print('❌ 즉시 햅틱 피드백 전송 실패: $e');
+      print('❌ 패턴 햅틱 전송 실패: $e');
+      // 폴백: 기본 햅틱 전송
+      await _watchService.sendHapticFeedback(message);
     }
   }
 
@@ -645,7 +738,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       final evaluationWpm = speechMetrics['evaluation_wpm'] as num?;
       
       if (speedCategory == 'very_fast' && evaluationWpm != null) {
-        feedback = '말하기 속도가 조금 빠른 편입니다 (${evaluationWpm.round()} WPM)';
+        feedback = '말하기 속도가 조금 빠른 편입니다. 천천히 말해보세요';
       } else if (speedCategory == 'very_slow') {
         feedback = '조금 더 활발하게 대화해보세요';
       } else if (speedCategory == 'normal') {
@@ -829,26 +922,57 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   /// Watch 세션 시작 및 테스트 햅틱 전송
   Future<void> _startWatchSession() async {
     try {
-      // Watch 세션 시작
-      await _watchService.startSession('dating');
-      print('✅ Watch 세션 시작 성공');
+      print('🚀 Watch 세션 시작 프로세스 시작');
       
-      // 2초 후 테스트 햅틱 피드백 전송
-      await Future.delayed(Duration(seconds: 2));
+      // 1. Watch 연결 상태 재확인
+      final isConnected = await _watchService.isWatchConnected();
+      setState(() {
+        _isWatchConnected = isConnected;
+      });
       
+      if (!isConnected) {
+        print('⚠️ Watch가 연결되지 않아 세션 시작을 건너뛰니다');
+        return;
+      }
+      
+      // 2. Watch 세션 시작 (자동 화면 전환 포함)
+      await _watchService.startSession('소개팅');
+      print('✅ Watch 세션 시작 신호 전송 완료');
+      
+      // 3. 추가 대기 시간 (Watch 앱 화면 전환 대기)
+      await Future.delayed(Duration(seconds: 3));
+      
+      // 4. 세션 시작 햅틱 피드백 전송
       if (_isWatchConnected) {
         await _watchService.sendHapticFeedback('🎙️ HaptiTalk 실시간 분석이 시작되었습니다!');
         print('📳 세션 시작 햅틱 피드백 전송 완료');
         
-        // 5초 후 추가 테스트 햅틱
+        // 5. 음성 인식 안내 햅틱 (5초 후)
         await Future.delayed(Duration(seconds: 3));
         await _watchService.sendHapticFeedback('💡 음성을 인식하고 있습니다. 자연스럽게 대화해보세요!');
         print('📳 음성 인식 안내 햅틱 피드백 전송 완료');
+        
+        // 6. 초기 분석 데이터 동기화
+        await Future.delayed(Duration(seconds: 2));
+        await _watchService.sendRealtimeAnalysis(
+          likability: _likability,
+          interest: _interest,
+          speakingSpeed: _speakingSpeed,
+          emotion: _emotionState,
+          feedback: '실시간 분석을 시작합니다',
+          elapsedTime: _formatTime(_seconds),
+        );
+        print('📊 초기 분석 데이터 동기화 완료');
+        
       } else {
         print('⚠️ Watch가 연결되지 않아 햅틱 피드백을 보낼 수 없습니다');
       }
+      
+      print('🎉 Watch 세션 시작 프로세스 완료');
+      
     } catch (e) {
       print('❌ Watch 세션 시작 실패: $e');
+      _showErrorSnackBar('Watch 세션 시작에 실패했습니다: $e');
     }
   }
 
@@ -959,6 +1083,68 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       
     } catch (e) {
       print('❌ 추천 토픽 업데이트 실패: $e');
+    }
+  }
+
+  /// 🚀 Watch 메시지 스트림 구독
+  void _subscribeToWatchMessages() {
+    print('🔗 Watch 메시지 스트림 구독 시작');
+    
+    try {
+      _watchMessageSubscription = _watchService.watchMessages.listen(
+        (message) {
+          print('📨 핸드폰에서 Watch 메시지 수신: $message');
+          if (mounted) {
+            _handleWatchMessage(message);
+          }
+        },
+        onError: (error) {
+          print('❌ Watch 메시지 스트림 에러: $error');
+        },
+        onDone: () {
+          print('📡 Watch 메시지 스트림 종료');
+        },
+      );
+      
+      print('✅ Watch 메시지 스트림 구독 완료');
+      
+    } catch (e) {
+      print('❌ Watch 메시지 스트림 구독 실패: $e');
+    }
+  }
+
+  /// 🚀 Watch 메시지 처리
+  void _handleWatchMessage(Map<String, dynamic> message) {
+    final action = message['action'] as String?;
+    
+    switch (action) {
+      case 'watchSessionStarted':
+        print('🎉 Watch에서 세션 진입 완료 신호 수신');
+        final sessionType = message['sessionType'] as String?;
+        setState(() {
+          _feedback = 'Apple Watch에서 $sessionType 세션이 시작되었습니다!';
+        });
+        
+        // 5초 후 피드백 메시지 클리어
+        Timer(Duration(seconds: 5), () {
+          if (mounted) {
+            setState(() {
+              _feedback = '';
+            });
+          }
+        });
+        break;
+        
+      case 'watchConnected':
+        print('📱 Watch 연결 신호 수신');
+        setState(() {
+          _isWatchConnected = true;
+        });
+        break;
+        
+      default:
+        print('⚠️ 알 수 없는 Watch 메시지: $action');
+        break;
     }
   }
 
@@ -1200,9 +1386,9 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
               Expanded(
                 child: _buildMetricCard(
                   title: '말하기 속도',
-                  value: '$_speakingSpeed/분',
+                  value: _getSpeedText(_speakingSpeed),
                   icon: Icons.speed,
-                  progressValue: _speakingSpeed / 200,
+                  progressValue: _speakingSpeed > 0 ? _speakingSpeed / 200 : 0,
                 ),
               ),
             ],

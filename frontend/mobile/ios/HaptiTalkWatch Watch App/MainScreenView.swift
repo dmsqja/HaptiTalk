@@ -124,6 +124,18 @@ struct MainScreenView: View {
         .fullScreenCover(isPresented: $showSessionProgress) {
             SessionProgressView()
         }
+        // 🚀 iPhone에서 세션 시작 메시지를 받으면 자동으로 세션 화면으로 전환
+        .onChange(of: appState.shouldNavigateToSession) { shouldNavigate in
+            if shouldNavigate {
+                print("🚀 Watch: 자동 세션 화면 전환 시작")
+                showSessionProgress = true
+                // 플래그 리셋 (한 번만 실행되도록)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    appState.shouldNavigateToSession = false
+                    print("🔄 Watch: 자동 전환 플래그 리셋 완료")
+                }
+            }
+        }
     }
 }
 
