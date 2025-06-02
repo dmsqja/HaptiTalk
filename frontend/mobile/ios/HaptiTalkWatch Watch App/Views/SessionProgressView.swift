@@ -203,6 +203,8 @@ struct SessionProgressView: View {
                 .padding(.top, -10)
             }
             .padding(.top, -10)
+            
+            // 🎨 시각적 피드백 오버레이는 이제 ContentView에서 글로벌로 처리됨
         }
         .fullScreenCover(isPresented: $showSessionSummary) {
             SessionSummaryView(
@@ -220,7 +222,16 @@ struct SessionProgressView: View {
         .onChange(of: appState.showHapticFeedback) { _, newValue in
             if newValue {
                 showHapticNotification(message: appState.hapticFeedbackMessage)
+                // 시각적 피드백은 AppState에서 자동으로 관리됨
                 appState.showHapticFeedback = false
+            }
+        }
+        .onChange(of: appState.showVisualFeedback) { _, newValue in
+            // 시각적 피드백 상태 변화 감지 및 로깅
+            if newValue {
+                print("🎨 Watch: 시각적 피드백 시작 - 패턴: \(appState.currentVisualPattern)")
+            } else {
+                print("🎨 Watch: 시각적 피드백 종료")
             }
         }
         .onAppear {

@@ -45,6 +45,12 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
     @Published var isSessionActive: Bool = false
     @Published var shouldNavigateToSession: Bool = false
     
+    // 🎨 시각적 피드백 상태 변수들
+    @Published var showVisualFeedback: Bool = false
+    @Published var currentVisualPattern: String = ""
+    @Published var visualPatternColor: Color = .blue
+    @Published var visualAnimationIntensity: Double = 0.0
+    
     // 더미 데이터 초기화
     override init() {
         super.init()
@@ -441,9 +447,13 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         // 🎯 설계 문서의 8개 기본 MVP 패턴 적용
         triggerMVPHapticPattern(patternId: patternId, pattern: pattern)
         
+        // 🎨 시각적 피드백 트리거
+        triggerVisualFeedback(patternId: patternId, category: category)
+        
         // 5초 후 자동으로 알림 닫기
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             self.showHapticFeedback = false
+            self.showVisualFeedback = false
         }
     }
     
@@ -452,12 +462,14 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         #if os(watchOS)
         let device = WKInterfaceDevice.current()
         
+        print("🎯 Watch: MVP 햅틱 패턴 실행 시작 - ID: \(patternId), 패턴: \(pattern)")
+        
         switch patternId {
         case "S1":  // 속도 조절 패턴 - 빠른 3회 연속 진동 (100ms 간격)
             playSpeedControlPattern(device: device)
         case "L1":  // 경청 강화 패턴 - 점진적 강도 증가 3회 진동
             playListeningPattern(device: device)
-        case "F1":  // 주제 전환 패턴 - 400ms 긴 단일 진동
+        case "F1":  // 주제 전환 패턴 - 더 긴 진동으로 수정
             playTopicChangePattern(device: device)
         case "R1":  // 호감도 상승 패턴 - 점진적 증가 파동형 3회
             playLikabilityUpPattern(device: device)
@@ -465,129 +477,297 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
             playSilenceManagementPattern(device: device)
         case "S2":  // 음량 조절 패턴 - 강도 변화 2회 진동
             playVolumeControlPattern(device: device, pattern: pattern)
-        case "R2":  // 관심도 하락 패턴 - 강한 2회 경고 진동 (150ms 간격)
+        case "R2":  // 관심도 하락 패턴 - 모든 단계를 강하게 수정
             playInterestDownPattern(device: device)
         case "L3":  // 질문 제안 패턴 - 2회 짧은 탭 + 1회 긴 진동
             playQuestionSuggestionPattern(device: device)
         default:
             // 기본 패턴 - 표준 알림
+            print("🎯 Watch: 기본 햅틱 패턴 실행")
             playDefaultHaptic(device: device)
         }
+        
+        print("🎯 Watch: MVP 햅틱 패턴 실행 완료 - ID: \(patternId)")
         #endif
     }
     
-    // 📊 S1: 속도 조절 패턴 (메타포: 빠른 심장 박동) - 🔥 강화된 버전
+    // 📊 S1: 속도 조절 패턴 (메타포: 빠른 심장 박동) - 🔥 확실한 간격 보장
     private func playSpeedControlPattern(device: WKInterfaceDevice) {
-        // 매우 빠른 3회 연속 진동, 강한 강도, 120ms 간격으로 더 뚜렷하게
-        device.play(.notification)  // 강함
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            device.play(.notification)  // 강함
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            device.play(.notification)  // 강함
-        }
-    }
-    
-    // 📊 L1: 경청 강화 패턴 (메타포: 점진적 주의 집중) - 🔥 강화된 버전
-    private func playListeningPattern(device: WKInterfaceDevice) {
-        // 매우 뚜렷한 점진적 강도 증가, 300ms 간격으로 더 명확하게
-        device.play(.click)  // 매우 약함
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            device.play(.directionUp)  // 중간
-        }
+        print("🎯 Watch: S1 속도조절 패턴 실행 시작 - 3회 진동 예정")
+        
+        // 첫 번째 강한 진동
+        device.play(.notification)
+        print("🔥 S1: 1/3 진동 실행 완료")
+        
+        // 두 번째 강한 진동 (0.8초 후 - 매우 긴 간격)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            device.play(.notification)  // 매우 강함
-            // 추가 강조를 위한 더블 탭
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            device.play(.notification)
+            print("🔥 S1: 2/3 진동 실행 완료")
+        }
+        
+        // 세 번째 강한 진동 (1.6초 후 - 매우 긴 간격)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            device.play(.notification)
+            print("🔥 S1: 3/3 진동 실행 완료 - 패턴 완료!")
+        }
+    }
+    
+    // 📊 L1: 경청 강화 패턴 (메타포: 점진적 주의 집중) - 🔥 확실한 간격 보장
+    private func playListeningPattern(device: WKInterfaceDevice) {
+        print("🎯 Watch: L1 경청강화 패턴 실행 시작 - 4단계 예정")
+        
+        // 1단계: 매우 약한 단일 탭
+        device.play(.click)
+        print("🔥 L1: 1/4 매우 약함 실행 완료")
+        
+        // 2단계: 약간 강한 단일 탭 (1.0초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            device.play(.directionUp)
+            print("🔥 L1: 2/4 약간 강함 실행 완료")
+        }
+        
+        // 3단계: 강한 단일 탭 (2.0초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            device.play(.notification)
+            print("🔥 L1: 3/4 강함 실행 완료")
+        }
+        
+        // 4단계: 매우 강한 더블 탭 (3.0초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            device.play(.notification)
+            print("🔥 L1: 4/4-1 매우 강함 첫번째")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 device.play(.notification)
+                print("🔥 L1: 4/4-2 매우 강함 두번째 - 패턴 완료!")
             }
         }
     }
     
-    // 📊 F1: 주제 전환 패턴 (메타포: 페이지 넘기기) - 🔥 강화된 버전
+    // 📊 F1: 주제 전환 패턴 (메타포: 페이지 넘기기) - 🔥 더 긴 진동으로 수정
     private func playTopicChangePattern(device: WKInterfaceDevice) {
-        // 매우 긴 단일 진동으로 다른 패턴과 확실히 구분
-        device.play(.success)
-        // 0.6초 후 추가 긴 진동으로 "페이지 넘기기" 완료 표현
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            device.play(.success)
+        print("🎯 Watch: F1 주제전환 패턴 실행 시작 - 2회 매우 긴 진동 예정")
+        
+        // 첫 번째 매우 긴 진동 (더 강하고 길게)
+        device.play(.notification)
+        print("🔥 F1: 1/2 매우 긴 진동 실행 완료")
+        
+        // 긴 휴지 후 두 번째 매우 긴 진동 (1.5초 후 - 매우 긴 간격)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            device.play(.notification)
+            print("🔥 F1: 2/2 매우 긴 진동 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 📊 R1: 호감도 상승 패턴 (메타포: 상승하는 파동) - 🔥 강화된 버전
+    // 📊 R1: 호감도 상승 패턴 (메타포: 상승하는 파동) - 🔥 확실한 간격 보장
     private func playLikabilityUpPattern(device: WKInterfaceDevice) {
-        // 매우 부드럽고 긍정적인 상승 패턴, 간격을 늘려서 더 명확하게
-        device.play(.click)  // 부드럽게 시작
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            device.play(.directionUp)  // 중간 상승
+        print("🎯 Watch: R1 호감도상승 패턴 실행 시작 - 4단계 상승 예정")
+        
+        // 1단계: 매우 부드러운 시작
+        device.play(.click)
+        print("🔥 R1: 1/4 부드러운 시작 실행 완료")
+        
+        // 2단계: 중간 상승 (0.7초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            device.play(.directionUp)
+            print("🔥 R1: 2/4 중간 상승 실행 완료")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            device.play(.success)  // 행복한 정점
+        
+        // 3단계: 행복한 진동 (1.4초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            device.play(.success)
+            print("🔥 R1: 3/4 행복한 진동 실행 완료")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-            device.play(.success)  // 지속되는 행복감
+        
+        // 4단계: 지속되는 행복감 더블 탭 (2.1초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) {
+            device.play(.success)
+            print("🔥 R1: 4/4-1 행복감 첫번째")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                device.play(.success)
+                print("🔥 R1: 4/4-2 행복감 두번째 - 패턴 완료!")
+            }
         }
     }
     
-    // 📊 F2: 침묵 관리 패턴 (메타포: 부드러운 알림) - 🔥 강화된 버전
+    // 📊 F2: 침묵 관리 패턴 (메타포: 부드러운 알림) - 🔥 간격 단축
     private func playSilenceManagementPattern(device: WKInterfaceDevice) {
-        // 매우 부드러운 2회 탭, 긴 간격으로 "침묵"의 느낌 표현
-        device.play(.click)  // 매우 부드럽게
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {  // 긴 침묵 후
-            device.play(.click)  // 다시 부드럽게
+        print("🎯 Watch: F2 침묵관리 패턴 실행 시작 - 2회 중간 강도 탭 예정")
+        
+        // 첫 번째 중간 강도 진동 (더 강하게)
+        device.play(.directionUp)
+        print("🔥 F2: 1/2 중간 강도 진동 실행 완료")
+        
+        // 짧은 침묵 후 두 번째 중간 강도 진동 (1.2초 후 - 간격 단축)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            device.play(.directionUp)
+            print("🔥 F2: 2/2 중간 강도 진동 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 📊 S2: 음량 조절 패턴 (메타포: 음파 증폭/감소) - 🔥 강화된 버전
+    // 📊 S2: 음량 조절 패턴 (메타포: 음파 증폭/감소) - 🔥 확실한 간격 보장
     private func playVolumeControlPattern(device: WKInterfaceDevice, pattern: String) {
-        if pattern.contains("loud") {
-            // 음량 낮춤: 매우 강함→매우 약함으로 극명한 대비
-            device.play(.notification)  // 매우 강함
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                device.play(.notification)  // 강함 유지
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                device.play(.click)  // 매우 약함
-            }
-        } else {
-            // 음량 높임: 매우 약함→매우 강함으로 극명한 대비
-            device.play(.click)  // 매우 약함
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                device.play(.notification)  // 매우 강함
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    device.play(.notification)  // 강함 유지
-                }
-            }
+        print("🎯 Watch: S2 음량조절 패턴 실행 시작 - 3단계 강도 변화 예정")
+        
+        // 매우 약한 시작 (단일)
+        device.play(.click)
+        print("🔥 S2: 1/3 매우 약한 단일 탭 실행 완료")
+        
+        // 중간 강도 (0.8초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            device.play(.directionUp)
+            print("🔥 S2: 2/3 중간 강도 탭 실행 완료")
+        }
+        
+        // 매우 강한 마지막 (1.6초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            device.play(.notification)
+            print("🔥 S2: 3/3 매우 강한 탭 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 📊 R2: 관심도 하락 패턴 (메타포: 경고 알림) - 🔥 강화된 버전
+    // 📊 R2: 관심도 하락 패턴 (메타포: 경고 알림) - 🔥 더 확실한 7회 진동
     private func playInterestDownPattern(device: WKInterfaceDevice) {
-        // 매우 강하고 긴급한 경고 패턴
-        device.play(.notification)  // 강한 경고
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            device.play(.notification)  // 즉시 반복
+        print("🎯 Watch: R2 관심도하락 패턴 실행 시작 - 총 7회 확실한 경고 예정")
+        
+        // 1회 강한 경고
+        device.play(.notification)
+        print("🔥 R2: 1/7 강한 경고 실행 완료")
+        
+        // 2회 매우 강한 경고 (0.5초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            device.play(.notification)
+            print("🔥 R2: 2/7 매우 강한 경고 실행 완료")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            device.play(.notification)  // 세 번째 강한 경고
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                device.play(.notification)  // 네 번째로 확실한 경고
+        
+        // 3회 매우 강한 경고 (1.0초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            device.play(.notification)
+            print("🔥 R2: 3/7 매우 강한 경고 실행 완료")
+        }
+        
+        // 4회 더블 경고 시작 (1.5초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            device.play(.notification)
+            print("🔥 R2: 4/7 더블 경고 첫번째")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                device.play(.notification)
+                print("🔥 R2: 5/7 더블 경고 두번째")
+            }
+        }
+        
+        // 5회 트리플 경고 시작 (2.2초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            device.play(.notification)
+            print("🔥 R2: 6/7 트리플 경고 첫번째")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                device.play(.notification)
+                print("🔥 R2: 7/7 트리플 경고 두번째 - 패턴 완료!")
             }
         }
     }
     
-    // 📊 L3: 질문 제안 패턴 (메타포: 물음표 형태) - 🔥 강화된 버전
+    // 📊 L3: 질문 제안 패턴 (메타포: 물음표 형태) - 🔥 더 강한 진동으로 수정
     private func playQuestionSuggestionPattern(device: WKInterfaceDevice) {
-        // 물음표 패턴을 더 명확하게: 짧음-짧음-긴 휴지-매우 긴 진동
-        device.play(.click)  // 첫 번째 짧은 탭
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            device.play(.click)  // 두 번째 짧은 탭
+        print("🎯 Watch: L3 질문제안 패턴 실행 시작 - 물음표 형태 4단계 예정")
+        
+        // 첫 번째 중간 강도 점 (더 강하게)
+        device.play(.directionUp)
+        print("🔥 L3: 1/4 중간 강도 점 실행 완료")
+        
+        // 두 번째 중간 강도 점 (0.6초 후, 더 강하게)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            device.play(.directionUp)
+            print("🔥 L3: 2/4 중간 강도 점 실행 완료")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {  // 긴 휴지 (물음표의 공간)
-            device.play(.success)  // 길고 명확한 마침표
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                device.play(.success)  // 질문의 여운
+        
+        // 긴 휴지 후 물음표 마침표 - 매우 강한 더블 진동 (1.8초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+            device.play(.notification)
+            print("🔥 L3: 3/4-1 물음표 마침표 첫번째")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                device.play(.notification)
+                print("🔥 L3: 3/4-2 물음표 마침표 두번째")
             }
+        }
+        
+        // 질문의 여운 - 중간 강도 (2.8초 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
+            device.play(.success)
+            print("🔥 L3: 4/4 질문의 여운 (중간 강도) 실행 완료 - 패턴 완료!")
+        }
+    }
+    
+    // 🎨 패턴별 시각적 피드백 트리거
+    private func triggerVisualFeedback(patternId: String, category: String) {
+        print("🎨 Watch: 시각적 피드백 트리거 시작 - 패턴: \(patternId), 카테고리: \(category)")
+        
+        currentVisualPattern = patternId
+        
+        // 카테고리별 기본 색상 설정
+        switch category {
+        case "speaker":
+            visualPatternColor = Color.orange
+        case "listener":
+            visualPatternColor = Color.blue
+        case "flow":
+            visualPatternColor = Color.green
+        case "reaction":
+            visualPatternColor = Color.pink
+        default:
+            visualPatternColor = Color.gray
+        }
+        
+        // 패턴별 애니메이션 강도 설정
+        switch patternId {
+        case "S1": // 속도 조절 - 빠른 펄스
+            visualAnimationIntensity = 1.0
+        case "L1": // 경청 강화 - 점진적 증가
+            visualAnimationIntensity = 0.8
+        case "F1": // 주제 전환 - 긴 페이드
+            visualAnimationIntensity = 0.6
+        case "R1": // 호감도 상승 - 상승 파동
+            visualAnimationIntensity = 0.9
+        case "F2": // 침묵 관리 - 부드러운 펄스
+            visualAnimationIntensity = 0.4
+        case "S2": // 음량 조절 - 변화하는 크기
+            visualAnimationIntensity = 0.7
+        case "R2": // 관심도 하락 - 강한 경고
+            visualAnimationIntensity = 1.0
+        case "L3": // 질문 제안 - 물음표 형태
+            visualAnimationIntensity = 0.5
+        default:
+            visualAnimationIntensity = 0.5
+        }
+        
+        showVisualFeedback = true
+        print("🎨 Watch: 시각적 피드백 표시 시작 - 색상: \(visualPatternColor), 강도: \(visualAnimationIntensity)")
+        
+        // 🔥 패턴별 실제 햅틱 지속시간에 맞춘 시각적 피드백 지속시간
+        let duration: Double
+        switch patternId {
+        case "S1": // 속도 조절: 3회 진동, 0.8+1.6=2.4초 + 여유 0.6초
+            duration = 3.5
+        case "L1": // 경청 강화: 4단계, 1.0+2.0+3.0=6.0초 + 여유 1.0초
+            duration = 7.5
+        case "F1": // 주제 전환: 2회 긴 진동, 1.5초 + 여유 1.0초
+            duration = 3.0
+        case "R1": // 호감도 상승: 4단계, 0.7+1.4+2.1=4.2초 + 여유 0.8초
+            duration = 5.5
+        case "F2": // 침묵 관리: 2회, 1.2초 + 여유 0.8초
+            duration = 2.5
+        case "S2": // 음량 조절: 3단계, 0.8+1.6=2.4초 + 여유 0.6초
+            duration = 3.5
+        case "R2": // 관심도 하락: 7회 진동, 총 약 3.0초 + 여유 1.0초
+            duration = 4.5
+        case "L3": // 질문 제안: 4단계, 0.6+1.8+2.8=5.2초 + 여유 0.8초
+            duration = 6.5
+        default:
+            duration = 4.0
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            print("🎨 Watch: 시각적 피드백 자동 종료 - 패턴: \(patternId), 지속시간: \(duration)초")
+            self.showVisualFeedback = false
         }
     }
 }
