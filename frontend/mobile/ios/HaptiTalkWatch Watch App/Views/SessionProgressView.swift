@@ -217,6 +217,19 @@ struct SessionProgressView: View {
                 appState.showHapticFeedback = false
             }
         }
+        // 🔥 세션 종료 시 자동으로 결과 화면으로 전환
+        .onChange(of: appState.shouldShowSessionSummary) { _, newValue in
+            if newValue {
+                // 약간의 지연 후 화면 전환 (패스트 클릭 방지와 행/ 대비)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    // 세션 요약 화면으로 전환
+                    showSessionSummary = true
+                    // 플래그 리셉
+                    appState.shouldShowSessionSummary = false
+                    print("🔥 Watch: 세션 요약 화면으로 자동 전환")
+                }
+            }
+        }
         .onChange(of: appState.showVisualFeedback) { _, newValue in
             // 시각적 피드백 상태 변화 감지 및 로깅
             if newValue {
