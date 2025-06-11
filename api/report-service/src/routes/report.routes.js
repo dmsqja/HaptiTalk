@@ -18,6 +18,13 @@ router.post(
     reportController.generateReport
 );
 
+// 🔧 세션 ID로 리포트 조회 (새로운 엔드포인트)
+router.get(
+    '/session/:sessionId',
+    authenticate,
+    reportController.getReportBySessionId
+);
+
 // 세션별 리포트 조회
 router.get(
     '/:reportId',

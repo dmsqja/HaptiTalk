@@ -20,11 +20,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String _selectedSort = '최신순';
   final List<String> _categories = [
     '전체',
+    '발표',
     '소개팅',
     '면접',
-    '발표',
-    '비즈니스',
-    '코칭',
     '최근 일주일',
     '최근 한달'
   ];
@@ -166,6 +164,101 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     return filtered;
+  }
+
+  // 🗑️ 세션 삭제 기능 추가
+  Future<void> _deleteSession(String sessionId) async {
+    // 삭제 확인 다이얼로그
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          '세션 삭제',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textColor,
+          ),
+        ),
+        content: Text(
+          '이 세션을 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.',
+          style: TextStyle(
+            fontSize: 14,
+            color: AppColors.secondaryTextColor,
+          ),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              '취소',
+              style: TextStyle(
+                color: AppColors.secondaryTextColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              '삭제',
+              style: TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        setState(() {
+          _isLoading = true;
+        });
+
+        // 실제 API 호출로 서버에서 삭제
+        final analysisProvider = Provider.of<AnalysisProvider>(context, listen: false);
+        await analysisProvider.deleteAnalysisResult(sessionId);
+
+        // 로컬 상태에서도 제거
+        setState(() {
+          _sessions.removeWhere((session) => session.id == sessionId);
+        });
+
+        // 성공 메시지
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('세션이 삭제되었습니다.'),
+            backgroundColor: AppColors.primaryColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      } catch (e) {
+        print('❌ 세션 삭제 실패: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('삭제 중 오류가 발생했습니다.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -358,7 +451,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           final session = filteredSessions[index];
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 15),
-                            child: SessionCard(session: session),
+                            child: SessionCard(
+                              session: session,
+                              onDelete: _deleteSession,
+                            ),
                           );
                         },
                       ),

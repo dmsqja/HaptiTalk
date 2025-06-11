@@ -15,6 +15,7 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
   bool _isWatchConnected = false;
   String _currentMessage = '';
   String _currentPatternId = '';
+  String _selectedSessionMode = '발표'; // 기본 세션 모드
   
   // 🎨 시각적 피드백을 위한 애니메이션 컨트롤러들
   late AnimationController _visualFeedbackController;
@@ -27,8 +28,8 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
   bool _showVisualFeedback = false;
   String _currentVisualPattern = '';
 
-  // 🎯 HaptiTalk 설계 문서 기반 8개 기본 MVP 패턴 (🔥 강화된 버전)
-  final List<Map<String, dynamic>> _hapticPatterns = [
+  // 🎯 HaptiTalk 설계 문서 기반 8개 기본 MVP 패턴 (🔥 수정된 버전)
+  final List<Map<String, dynamic>> _allHapticPatterns = [
     {
       'patternId': 'S1',
       'category': 'speaker',
@@ -38,7 +39,17 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       'pattern': 'speed_control',
       'icon': Icons.speed,
       'color': Colors.orange,
-      'message': '🚀 말하기 속도를 조금 낮춰보세요',
+      'sessions': ['발표', '면접', '소개팅'], // 모든 세션에서 사용
+      'messages': {
+        '발표': '🚀 조금 천천히 말해보세요',
+        '면접': '🚀 답변 속도를 조절하세요', 
+        '소개팅': '🚀 대화 속도를 조절하세요',
+      },
+      'titles': {
+        '발표': '발표 속도 조절',
+        '면접': '답변 속도 조절',
+        '소개팅': '대화 속도 조절',
+      },
       'vibration': '3회 강한 진동',
     },
     {
@@ -50,31 +61,61 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       'pattern': 'listening_enhancement',
       'icon': Icons.hearing,
       'color': Colors.blue,
-      'message': '👂 더 적극적으로 경청해보세요',
+      'sessions': ['발표', '면접', '소개팅'],
+      'messages': {
+        '발표': '👂 청중과의 소통을 강화하세요',
+        '면접': '👂 면접관의 질문에 집중하세요',
+        '소개팅': '👂 상대방의 말에 집중하세요',
+      },
+      'titles': {
+        '발표': '청중 소통 강화',
+        '면접': '면접관 경청',
+        '소개팅': '상대방 경청',
+      },
       'vibration': '약함→중간→강함',
     },
     {
       'patternId': 'F1',
       'category': 'flow',
-      'title': '주제 전환',
-      'description': '대화 주제를 바꿀 적절한 타이밍',
+      'title': '주제 전환', // 관심도 하락 시 주제 전환 제안
+      'description': '관심도가 하락했을 때 주제를 바꿀 타이밍',
       'metaphor': '페이지 넘기기',
       'pattern': 'topic_change',
       'icon': Icons.change_circle,
       'color': Colors.green,
-      'message': '🔄 주제를 자연스럽게 바꿔보세요',
+      'sessions': ['발표', '면접', '소개팅'],
+      'messages': {
+        '발표': '⚠️ 주제를 바꿔보세요',
+        '면접': '⚠️ 주제를 바꿔보세요',
+        '소개팅': '⚠️ 주제를 바꿔보세요',
+      },
+      'titles': {
+        '발표': '발표 주제 전환',
+        '면접': '면접 주제 전환',
+        '소개팅': '대화 주제 전환',
+      },
       'vibration': '2회 긴 진동',
     },
     {
       'patternId': 'R1',
       'category': 'reaction',
-      'title': '호감도 상승',
-      'description': '상대방의 호감도가 높아졌을 때',
+      'title': '우수 상태', // 호감도/자신감 우수
+      'description': '상대방의 반응이 매우 좋을 때',
       'metaphor': '상승하는 파동',
       'pattern': 'likability_up',
-      'icon': Icons.favorite,
+      'icon': Icons.celebration,
       'color': Colors.pink,
-      'message': '💕 상대방이 호감을 느끼고 있어요!',
+      'sessions': ['발표', '면접', '소개팅'],
+      'messages': {
+        '발표': '🎉 훌륭한 발표 자신감이에요!',
+        '면접': '👔 면접 자신감이 훌륭해요!',
+        '소개팅': '💕 상대방이 매우 좋아해요!',
+      },
+      'titles': {
+        '발표': '발표 자신감 우수',
+        '면접': '면접 자신감 우수',
+        '소개팅': '호감도 우수',
+      },
       'vibration': '4회 상승 파동',
     },
     {
@@ -86,7 +127,17 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       'pattern': 'silence_management',
       'icon': Icons.volume_off,
       'color': Colors.grey,
-      'message': '🤫 자연스럽게 대화를 이어가세요',
+      'sessions': ['발표', '면접', '소개팅'],
+      'messages': {
+        '발표': '⏸️ 적절한 휴지를 활용하세요',
+        '면접': '🧘‍♂️ 더 차분하게 답변해보세요',
+        '소개팅': '⏸️ 자연스러운 침묵을 활용하세요',
+      },
+      'titles': {
+        '발표': '발표 휴지 관리',
+        '면접': '면접 침묵 관리',
+        '소개팅': '대화 침묵 관리',
+      },
       'vibration': '2회 부드러운 탭',
     },
     {
@@ -98,19 +149,39 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       'pattern': 'volume_control',
       'icon': Icons.volume_up,
       'color': Colors.purple,
-      'message': '🔊 목소리 크기를 조절해보세요',
+      'sessions': ['발표', '면접', '소개팅'],
+      'messages': {
+        '발표': '🔊 발표 음량을 조절하세요',
+        '면접': '🔊 답변 음량을 조절하세요',
+        '소개팅': '🔊 목소리 크기를 조절하세요',
+      },
+      'titles': {
+        '발표': '발표 음량 조절',
+        '면접': '답변 음량 조절',
+        '소개팅': '대화 음량 조절',
+      },
       'vibration': '극명한 강도 변화 (약함↔강함)',
     },
     {
       'patternId': 'R2',
       'category': 'reaction',
-      'title': '관심도 하락',
-      'description': '상대방의 관심이 떨어지고 있을 때',
-      'metaphor': '경고 알림',
-      'pattern': 'interest_down',
+      'title': '자신감/호감도 부족', // 수정: 관심도 하락 → 자신감/호감도 부족
+      'description': '자신감이 부족하거나 호감도가 떨어졌을 때',
+      'metaphor': '강한 경고 알림',
+      'pattern': 'confidence_low', // 패턴명도 수정
       'icon': Icons.warning,
       'color': Colors.red,
-      'message': '⚠️ 상대방의 관심을 끌어보세요',
+      'sessions': ['발표', '면접', '소개팅'],
+      'messages': {
+        '발표': '💪 더 자신감 있게 말해보세요!',
+        '면접': '👔 자신감을 가지고 답변해보세요!',
+        '소개팅': '💕 더 밝고 긍정적으로 대화해보세요!',
+      },
+      'titles': {
+        '발표': '발표 자신감 부족',
+        '면접': '면접 자신감 부족',
+        '소개팅': '호감도 부족',
+      },
       'vibration': '4회 강한 경고',
     },
     {
@@ -122,10 +193,34 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       'pattern': 'question_suggestion',
       'icon': Icons.help_outline,
       'color': Colors.teal,
-      'message': '❓ 상대방에게 질문해보세요',
+      'sessions': ['발표', '면접', '소개팅'],
+      'messages': {
+        '발표': '🎯 핵심 포인트를 강조해보세요',
+        '면접': '❓ 궁금한 점을 질문해보세요',
+        '소개팅': '🗣️ 더 흥미로운 대화를 시도해보세요!',
+      },
+      'titles': {
+        '발표': '핵심 포인트 강조',
+        '면접': '질문 제안',
+        '소개팅': '대화 제안',
+      },
       'vibration': '짧음-짧음-긴휴지-긴진동-여운',
     },
   ];
+
+  // 현재 선택된 세션 모드에 맞는 패턴들만 필터링
+  List<Map<String, dynamic>> get _hapticPatterns {
+    return _allHapticPatterns.where((pattern) {
+      return (pattern['sessions'] as List<String>).contains(_selectedSessionMode);
+    }).map((pattern) {
+      // 세션별 메시지 적용
+      final sessionMessages = pattern['messages'] as Map<String, String>;
+      return {
+        ...pattern,
+        'message': sessionMessages[_selectedSessionMode] ?? pattern['messages']['소개팅'],
+      };
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -165,6 +260,7 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
         pattern: pattern['pattern'],
         category: pattern['category'],
         patternId: pattern['patternId'],
+        sessionType: _selectedSessionMode, // 🔥 현재 선택된 세션 모드 전달
       );
 
       // 🔥 Flutter 앱 연습화면에서는 시각적 피드백을 2-3초로 통일
@@ -213,7 +309,7 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       case 'S2': // 음량 조절 - 변화하는 크기
         _triggerVaryingSizeAnimation();
         break;
-      case 'R2': // 관심도 하락 - 강한 경고
+      case 'R2': // 자신감/호감도 부족 - 강한 경고
         _triggerAlertAnimation();
         break;
       case 'L3': // 질문 제안 - 물음표 형태
@@ -348,6 +444,8 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildIntroSection(),
+                      const SizedBox(height: 20),
+                      _buildSessionModeSelector(),
                       const SizedBox(height: 25),
                       _buildPatternGrid(),
                       const SizedBox(height: 25),
@@ -477,6 +575,46 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
               color: AppColors.secondaryTextColor,
               height: 1.5,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionModeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.dividerColor),
+      ),
+      child: Row(
+        children: [
+          const Text(
+            '세션 모드:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textColor,
+            ),
+          ),
+          const SizedBox(width: 10),
+          DropdownButton<String>(
+            value: _selectedSessionMode,
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                setState(() {
+                  _selectedSessionMode = newValue;
+                });
+              }
+            },
+            items: ['발표', '면접', '소개팅'].map<DropdownMenuItem<String>>((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text(value),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -925,7 +1063,7 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
           },
         );
       
-      case 'R2': // 관심도 하락 - 강한 경고
+      case 'R2': // 자신감/호감도 부족 - 강한 경고
         return AnimatedBuilder(
           animation: _pulseController,
           builder: (context, child) {
@@ -1024,7 +1162,7 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       case 'F1':
         return Icons.change_circle;
       case 'R1':
-        return Icons.favorite;
+        return Icons.celebration;
       case 'F2':
         return Icons.volume_off;
       case 'S2':
@@ -1039,23 +1177,32 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
   }
 
   String _getPatternTitle(String patternId) {
+    // 현재 선택된 세션 모드에 따라 다른 제목 반환
     switch (patternId) {
       case 'S1':
-        return '속도 조절';
+        return _selectedSessionMode == '발표' ? '발표 속도 조절' :
+               _selectedSessionMode == '면접' ? '답변 속도 조절' : '대화 속도 조절';
       case 'L1':
-        return '경청 강화';
+        return _selectedSessionMode == '발표' ? '청중 소통 강화' :
+               _selectedSessionMode == '면접' ? '면접관 경청' : '상대방 경청';
       case 'F1':
-        return '주제 전환';
+        return _selectedSessionMode == '발표' ? '발표 주제 전환' :
+               _selectedSessionMode == '면접' ? '면접 주제 전환' : '대화 주제 전환';
       case 'R1':
-        return '호감도 상승';
+        return _selectedSessionMode == '발표' ? '발표 자신감 우수' :
+               _selectedSessionMode == '면접' ? '면접 자신감 우수' : '호감도 우수';
       case 'F2':
-        return '침묵 관리';
+        return _selectedSessionMode == '발표' ? '발표 휴지 관리' :
+               _selectedSessionMode == '면접' ? '면접 침묵 관리' : '대화 침묵 관리';
       case 'S2':
-        return '음량 조절';
+        return _selectedSessionMode == '발표' ? '발표 음량 조절' :
+               _selectedSessionMode == '면접' ? '답변 음량 조절' : '대화 음량 조절';
       case 'R2':
-        return '관심도 하락';
+        return _selectedSessionMode == '발표' ? '발표 자신감 부족' :
+               _selectedSessionMode == '면접' ? '면접 자신감 부족' : '호감도 부족';
       case 'L3':
-        return '질문 제안';
+        return _selectedSessionMode == '발표' ? '핵심 포인트 강조' :
+               _selectedSessionMode == '면접' ? '질문 제안' : '대화 제안';
       default:
         return 'Unknown Pattern';
     }

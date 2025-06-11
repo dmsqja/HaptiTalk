@@ -24,7 +24,7 @@ class HomeScreen extends StatelessWidget {
               children: [
                 _buildHeader(context),
                 const SizedBox(height: 20),
-                _buildPremiumBanner(),
+                _buildPremiumBanner(context),
                 const SizedBox(height: 25),
                 _buildQuickActions(),
                 const SizedBox(height: 25),
@@ -55,122 +55,346 @@ class HomeScreen extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.lightGrayColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: IconButton(
-                  icon:
-                      const Icon(Icons.bug_report, color: AppColors.textColor),
-                  onPressed: () {
-                    Navigator.pushNamed(context, AppRoutes.watchDebug);
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.lightGrayColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.notifications_none,
-                      color: AppColors.textColor),
-                  onPressed: () {},
-                ),
-              ),
-            ],
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.lightGrayColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.notifications_none,
+                  color: AppColors.textColor),
+              onPressed: () {
+                _showNotifications(context);
+              },
+            ),
           ),
         ],
       ),
     );
   }
 
-  // Premium 배너
-  Widget _buildPremiumBanner() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.primaryColor,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'HaptiTalk Premium',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+  // 🔔 알림 표시 메서드
+  void _showNotifications(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // 핸들 바
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                '더 많은 분석과 심층 인사이트를\n경험해보세요',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 10),
-              ElevatedButton(
-                onPressed: () =>
-                    NavigationService.navigateTo(AppRoutes.subscription),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.primaryColor,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+            ),
+            // 헤더
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '알림',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textColor,
+                    ),
                   ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    child: const Text('닫기'),
+                  ),
+                ],
+              ),
+            ),
+            // 알림 목록
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: [
+                  _buildNotificationItem(
+                    icon: Icons.analytics,
+                    title: '분석 완료',
+                    subtitle: '어제 소개팅 세션 분석이 완료되었습니다.',
+                    time: '10분 전',
+                    isNew: true,
+                  ),
+                  _buildNotificationItem(
+                    icon: Icons.star,
+                    title: 'HaptiTalk Premium',
+                    subtitle: '프리미엄 기능을 체험해보세요! 첫 달 50% 할인',
+                    time: '1시간 전',
+                    isNew: true,
+                  ),
+                  _buildNotificationItem(
+                    icon: Icons.tips_and_updates,
+                    title: '오늘의 팁',
+                    subtitle: '경청 기술 향상하기: 상대방의 말에 적절한 반응을...',
+                    time: '2시간 전',
+                    isNew: false,
+                  ),
+                  _buildNotificationItem(
+                    icon: Icons.watch,
+                    title: 'Apple Watch 연결',
+                    subtitle: 'Apple Watch가 성공적으로 연결되었습니다.',
+                    time: '어제',
+                    isNew: false,
+                  ),
+                  _buildNotificationItem(
+                    icon: Icons.vibration,
+                    title: '햅틱 패턴 업데이트',
+                    subtitle: '새로운 햅틱 피드백 패턴이 추가되었습니다.',
+                    time: '2일 전',
+                    isNew: false,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🔔 알림 아이템 위젯
+  Widget _buildNotificationItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String time,
+    required bool isNew,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isNew ? AppColors.primaryColor.withOpacity(0.05) : Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isNew ? AppColors.primaryColor.withOpacity(0.2) : Colors.grey[200]!,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              icon,
+              color: AppColors.primaryColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textColor,
+                      ),
+                    ),
+                    if (isNew) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                child: const Text(
-                  '자세히 보기',
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                    color: AppColors.secondaryTextColor,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Premium 배너 및 햅틱 패턴 연습 섹션
+  Widget _buildPremiumBanner(BuildContext context) {
+    return Column(
+      children: [
+        // 🔥 프리미엄 배너 (상단) - 파란색 디자인 복원
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.primaryColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'HaptiTalk Premium',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '더 많은 분석과 심층 인사이트를\n경험해보세요',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: () =>
+                        NavigationService.navigateTo(AppRoutes.subscription),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.primaryColor,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      '자세히 보기',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                shape: BoxShape.circle,
+        ),
+        const SizedBox(height: 15),
+        // 🔥 햅틱 패턴 연습 카드 (하단) - 기존 디자인 유지
+        BaseCard(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '햅틱 패턴 연습',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '다양한 햅틱 피드백을 연습해보세요',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.secondaryTextColor,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Center(
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(30),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pushNamed(context, AppRoutes.hapticPractice);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  minimumSize: const Size(92, 38),
+                ),
+                child: const Text(
+                  '시작하기',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -203,10 +427,8 @@ class HomeScreen extends StatelessWidget {
                 icon: Icons.history,
                 label: '기록',
                 onTap: () {
-                  // 전역 콜백 함수를 통해 메인 탭의 인덱스를 기록 탭(인덱스 2)으로 변경
-                  if (onMainTabIndexChange != null) {
-                    onMainTabIndexChange!(2); // 기록 탭 인덱스로 변경
-                  }
+                  // 기록 화면으로 직접 이동
+                  NavigationService.navigateTo(AppRoutes.sessionsHistory);
                 },
               ),
             ),
@@ -503,58 +725,6 @@ class HomeScreen extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 14,
                   color: AppColors.secondaryTextColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 15),
-        BaseCard(
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '햅틱 패턴 연습',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '다양한 햅틱 피드백을 연습해보세요',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.secondaryTextColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, AppRoutes.hapticPractice);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(100),
-                  ),
-                  minimumSize: const Size(92, 38),
-                ),
-                child: const Text(
-                  '시작하기',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
                 ),
               ),
             ],

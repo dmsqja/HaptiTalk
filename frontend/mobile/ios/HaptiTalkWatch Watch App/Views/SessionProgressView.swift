@@ -62,140 +62,8 @@ struct SessionProgressView: View {
                     .zIndex(10) // 다른 UI 요소보다 위에 표시
             }
             
-            ScrollView(.vertical) {
-                VStack(spacing: 0) {
-                    // 상단 시간 및 모드 표시
-                    HStack {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color(.sRGB, red: 0.91, green: 0.12, blue: 0.39, opacity: 1.0)) // #E91E63
-                                .frame(width: 55, height: 21.5)
-                            
-                            HStack(spacing: 4) {
-                                Image(systemName: "heart.fill")
-                                    .resizable()
-                                    .frame(width: 10, height: 10)
-                                    .foregroundColor(.white)
-                                
-                                Text(sessionMode)
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        Text(formattedTime)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(Color(.sRGB, red: 0.88, green: 0.88, blue: 0.88, opacity: 1.0)) // #E0E0E0
-                    }
-                    .padding(.top, 5)
-                    
-                    // 감정 상태 및 말하기 속도 표시
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.1))
-                            .frame(height: 67)
-                        
-                        VStack(spacing: 8) {
-                            // 감정 상태
-                            HStack {
-                                Text("감정 상태")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(Color(.sRGB, red: 0.88, green: 0.88, blue: 0.88, opacity: 1.0)) // #E0E0E0
-                                
-                                Spacer()
-                                
-                                HStack(spacing: 4) {
-                                    Image(systemName: "face.smiling.fill")
-                                        .resizable()
-                                        .frame(width: 12, height: 12)
-                                        .foregroundColor(emotionColor)
-                                    
-                                    Text(emotionState)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(emotionColor)
-                                }
-                            }
-                            
-                            // 말하기 속도
-                            VStack(spacing: 4) {
-                                Text("말하기 속도")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(Color(.sRGB, red: 0.88, green: 0.88, blue: 0.88, opacity: 1.0)) // #E0E0E0
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                
-                                ZStack(alignment: .leading) {
-                                    Rectangle()
-                                        .fill(Color.white.opacity(0.2))
-                                        .frame(height: 4)
-                                        .cornerRadius(2)
-                                    
-                                    Rectangle()
-                                        .fill(Color(.sRGB, red: 0.25, green: 0.32, blue: 0.71, opacity: 1.0)) // #3F51B5
-                                        .frame(width: {
-                                            return WKInterfaceDevice.current().screenBounds.width * 0.75 * speakingSpeed
-                                        }(), height: 4)
-                                        .cornerRadius(2)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 10)
-                    }
-                    .padding(.top, 10)
-                    
-                    // 피드백 메시지
-                    if showFeedback {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(.sRGB, red: 0.25, green: 0.32, blue: 0.71, opacity: 0.15)) // #3F51B5 with opacity
-                                .frame(height: 44)
-                            
-                            Text(feedbackMessage)
-                                .font(.system(size: 10))
-                                .foregroundColor(Color(.sRGB, red: 0.56, green: 0.79, blue: 0.98, opacity: 1.0)) // #90CAF9
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 8)
-                        }
-                        .padding(.top, 10)
-                    }
-                    
-                    // 추천 대화 주제
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("추천 대화 주제")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(.sRGB, red: 0.62, green: 0.62, blue: 0.62, opacity: 1.0)) // #9E9E9E
-                        
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(recommendedTopics, id: \.self) { topic in
-                                    Text(topic)
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 6)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(Color(.sRGB, red: 0.3, green: 0.69, blue: 0.31, opacity: 0.3)) // #4CAF50 with opacity
-                                                .stroke(Color(.sRGB, red: 0.3, green: 0.69, blue: 0.31, opacity: 1.0), lineWidth: 1)
-                                        )
-                                }
-                            }
-                        }
-                    }
-                    .padding(.top, 10)
-                    
-                    Spacer()
-                    
-                    // 종료 버튼 제거됨
-                    Spacer().frame(height: 20)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .buttonStyle(PlainButtonStyle())
-                .padding(.top, -10)
-            }
-            .padding(.top, -10)
+            // 일반 세션 UI 표시
+            mainSessionContent
         }
         .fullScreenCover(isPresented: $showSessionSummary) {
             SessionSummaryView(
@@ -333,6 +201,143 @@ struct SessionProgressView: View {
         setupHapticSubscriptions()
         
         print("✅ Watch: 세션 초기화 완료")
+    }
+    
+    private var mainSessionContent: some View {
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                // 상단 시간 및 모드 표시
+                HStack {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(.sRGB, red: 0.91, green: 0.12, blue: 0.39, opacity: 1.0)) // #E91E63
+                            .frame(width: 55, height: 21.5)
+                        
+                        HStack(spacing: 4) {
+                            Image(systemName: "heart.fill")
+                                .resizable()
+                                .frame(width: 10, height: 10)
+                                .foregroundColor(.white)
+                            
+                            Text(sessionMode)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Text(formattedTime)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color(.sRGB, red: 0.88, green: 0.88, blue: 0.88, opacity: 1.0)) // #E0E0E0
+                }
+                .padding(.top, 5)
+                
+                // 감정 상태 및 말하기 속도 표시
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.1))
+                        .frame(height: 67)
+                    
+                    VStack(spacing: 8) {
+                        // 감정 상태
+                        HStack {
+                            Text("감정 상태")
+                                .font(.system(size: 10))
+                                .foregroundColor(Color(.sRGB, red: 0.88, green: 0.88, blue: 0.88, opacity: 1.0)) // #E0E0E0
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 4) {
+                                Image(systemName: "face.smiling.fill")
+                                    .resizable()
+                                    .frame(width: 12, height: 12)
+                                    .foregroundColor(emotionColor)
+                                
+                                Text(emotionState)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(emotionColor)
+                            }
+                        }
+                        
+                        // 말하기 속도
+                        VStack(spacing: 4) {
+                            Text("말하기 속도")
+                                .font(.system(size: 10))
+                                .foregroundColor(Color(.sRGB, red: 0.88, green: 0.88, blue: 0.88, opacity: 1.0)) // #E0E0E0
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(height: 4)
+                                    .cornerRadius(2)
+                                
+                                Rectangle()
+                                    .fill(Color(.sRGB, red: 0.25, green: 0.32, blue: 0.71, opacity: 1.0)) // #3F51B5
+                                    .frame(width: {
+                                        return WKInterfaceDevice.current().screenBounds.width * 0.75 * speakingSpeed
+                                    }(), height: 4)
+                                    .cornerRadius(2)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                }
+                .padding(.top, 10)
+                
+                // 피드백 메시지
+                if showFeedback {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(.sRGB, red: 0.25, green: 0.32, blue: 0.71, opacity: 0.15)) // #3F51B5 with opacity
+                            .frame(height: 44)
+                        
+                        Text(feedbackMessage)
+                            .font(.system(size: 10))
+                            .foregroundColor(Color(.sRGB, red: 0.56, green: 0.79, blue: 0.98, opacity: 1.0)) // #90CAF9
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 8)
+                    }
+                    .padding(.top, 10)
+                }
+                
+                // 추천 대화 주제
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("추천 대화 주제")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color(.sRGB, red: 0.62, green: 0.62, blue: 0.62, opacity: 1.0)) // #9E9E9E
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(recommendedTopics, id: \.self) { topic in
+                                Text(topic)
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color(.sRGB, red: 0.3, green: 0.69, blue: 0.31, opacity: 0.3)) // #4CAF50 with opacity
+                                            .stroke(Color(.sRGB, red: 0.3, green: 0.69, blue: 0.31, opacity: 1.0), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 10)
+                
+                Spacer()
+                
+                // 종료 버튼 제거됨
+                Spacer().frame(height: 20)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .buttonStyle(PlainButtonStyle())
+            .padding(.top, -10)
+        }
+        .padding(.top, -10)
     }
 }
 

@@ -99,16 +99,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             fontSize: 24,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            color: AppColors.secondaryTextColor,
-            onPressed: () {
-              // 설정 화면으로 이동
-              NavigationService.navigateTo(AppRoutes.settings);
-            },
-          ),
-        ],
       ),
       body: isLoading 
         ? const Center(child: CircularProgressIndicator())

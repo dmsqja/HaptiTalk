@@ -71,6 +71,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           MaterialPageRoute(
             builder: (context) => AnalysisSummaryScreen(
               sessionId: latestAnalysis.sessionId,
+              sessionType: null,
             ),
           ),
         );

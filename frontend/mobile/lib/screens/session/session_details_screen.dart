@@ -24,21 +24,78 @@ class SessionDetailsScreen extends StatefulWidget {
 
 class _SessionDetailsScreenState extends State<SessionDetailsScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  TabController? _tabController;
   late Future<AnalysisResult> _analysisFuture;
   bool _isAudioPlaying = false;
+  AnalysisResult? _analysisResult; // 분석 결과 저장용
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
     _analysisFuture = _loadAnalysisData();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     super.dispose();
+  }
+
+  void _initializeTabController(AnalysisResult analysisResult) {
+    _analysisResult = analysisResult;
+    final isPresentation = _getSessionTypeKey(analysisResult) == 'presentation';
+    final tabCount = isPresentation ? 3 : 4; // 발표는 3개, 나머지는 4개 탭
+    _tabController = TabController(length: tabCount, vsync: this);
+  }
+
+  String _getSessionTypeKey(AnalysisResult analysisResult) {
+    final category = analysisResult.category.toLowerCase();
+    if (category.contains('발표') || category == 'presentation') return 'presentation';
+    if (category.contains('면접') || category == 'interview') return 'interview';
+    if (category.contains('소개팅') || category == 'dating') return 'dating';
+    return 'presentation';
+  }
+
+  List<Widget> _buildTabs() {
+    if (_analysisResult == null) return [];
+    
+    final isPresentation = _getSessionTypeKey(_analysisResult!) == 'presentation';
+    
+    if (isPresentation) {
+      return const [
+        Tab(text: '타임라인'),
+        Tab(text: '말하기 패턴'),
+        Tab(text: '대화 주제'),
+      ];
+    } else {
+      return const [
+        Tab(text: '타임라인'),
+        Tab(text: '감정/호감도'),
+        Tab(text: '말하기 패턴'),
+        Tab(text: '대화 주제'),
+      ];
+    }
+  }
+
+  List<Widget> _buildTabViews() {
+    if (_analysisResult == null) return [];
+    
+    final isPresentation = _getSessionTypeKey(_analysisResult!) == 'presentation';
+    
+    if (isPresentation) {
+      return [
+        SessionDetailTabTimeline(analysisResult: _analysisResult!),
+        SessionDetailTabSpeaking(analysisResult: _analysisResult!),
+        SessionDetailTabTopics(analysisResult: _analysisResult!),
+      ];
+    } else {
+      return [
+        SessionDetailTabTimeline(analysisResult: _analysisResult!),
+        SessionDetailTabEmotion(analysisResult: _analysisResult!),
+        SessionDetailTabSpeaking(analysisResult: _analysisResult!),
+        SessionDetailTabTopics(analysisResult: _analysisResult!),
+      ];
+    }
   }
 
   Future<AnalysisResult> _loadAnalysisData() async {
@@ -119,6 +176,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen>
           }
 
           final analysisResult = snapshot.data!;
+          
+          // 탭 컨트롤러 초기화 (한 번만)
+          if (_tabController == null) {
+            _initializeTabController(analysisResult);
+          }
 
           return Column(
             children: [
@@ -132,7 +194,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen>
                 onPlayAudio: _toggleAudioPlayback,
               ),
 
-              // 탭 바 (피그마 디자인에 맞게 수정)
+              // 탭 바 (동적으로 구성)
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -156,35 +218,18 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen>
                     fontWeight: FontWeight.w500,
                     fontSize: 14,
                   ),
-                  tabs: [
-                    Tab(text: '타임라인'),
-                    Tab(text: '감정/호감도'),
-                    Tab(text: '말하기 패턴'),
-                    Tab(text: '대화 주제'),
-                  ],
+                  tabs: _buildTabs(),
                 ),
               ),
 
-              // 탭 내용
+              // 탭 내용 (동적으로 구성)
               Expanded(
                 child: Container(
                   color: Colors.white,
                   child: TabBarView(
                     controller: _tabController,
                     physics: BouncingScrollPhysics(),
-                    children: [
-                      // 타임라인 탭
-                      SessionDetailTabTimeline(analysisResult: analysisResult),
-
-                      // 감정/호감도 탭
-                      SessionDetailTabEmotion(analysisResult: analysisResult),
-
-                      // 말하기 패턴 탭
-                      SessionDetailTabSpeaking(analysisResult: analysisResult),
-
-                      // 대화 주제 탭
-                      SessionDetailTabTopics(analysisResult: analysisResult),
-                    ],
+                    children: _buildTabViews(),
                   ),
                 ),
               ),

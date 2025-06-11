@@ -207,7 +207,8 @@ class WatchService {
     required String message,
     required String pattern,
     required String category,
-    required String patternId
+    required String patternId,
+    String? sessionType,
   }) async {
     try {
       await _checkConnectionStatus();
@@ -218,9 +219,10 @@ class WatchService {
         'pattern': pattern,
         'category': category,
         'patternId': patternId,
+        'sessionType': sessionType,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
-      print('🎯 Watch 패턴 햅틱 전송 [$patternId/$category]: $message - 결과: $result');
+      print('🎯 Watch 패턴 햅틱 전송 [$patternId/$category${sessionType != null ? "/$sessionType" : ""}]: $message - 결과: $result');
     } catch (e) {
       print('❌ Watch 패턴 햅틱 실패: $e, 기본 햅틱으로 폴백');
       // 패턴 전송 실패 시 기본 햅틱으로 폴백
@@ -303,5 +305,37 @@ class WatchService {
     _connectionStatusController.close();
     _watchMessageController.close();
     _periodicTimer?.cancel();
+  }
+
+  // 시각적 피드백 초기화 (세션 시작 시)
+  Future<void> initializeVisualFeedback() async {
+    try {
+      await _checkConnectionStatus();
+
+      final result = await _channel.invokeMethod('initializeVisualFeedback', {
+        'action': 'initializeVisualFeedback',
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+      print('🔄 Watch 시각적 피드백 초기화: $result');
+    } catch (e) {
+      print('❌ Watch 시각적 피드백 초기화 실패: $e');
+      rethrow;
+    }
+  }
+
+  // 시각적 피드백 클리어 (세션 종료 시)
+  Future<void> clearVisualFeedback() async {
+    try {
+      await _checkConnectionStatus();
+
+      final result = await _channel.invokeMethod('clearVisualFeedback', {
+        'action': 'clearVisualFeedback',
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+      print('🧹 Watch 시각적 피드백 클리어: $result');
+    } catch (e) {
+      print('❌ Watch 시각적 피드백 클리어 실패: $e');
+      rethrow;
+    }
   }
 }

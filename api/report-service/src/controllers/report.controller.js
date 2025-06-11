@@ -43,6 +43,22 @@ const reportController = {
     },
 
     /**
+     * 🔧 세션 ID로 리포트 조회
+     */
+    async getReportBySessionId(req, res, next) {
+        try {
+            const { sessionId } = req.params;
+            const userId = req.user.id;
+
+            const report = await reportService.getReportBySessionId(userId, sessionId);
+
+            return formatResponse(res, 200, true, report, 'Report retrieved successfully');
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    /**
      * 사용자별 리포트 목록 조회
      */
     async getReportsByUser(req, res, next) {

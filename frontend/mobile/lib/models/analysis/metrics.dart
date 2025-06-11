@@ -59,7 +59,7 @@ class SessionMetrics {
 
 // 말하기 관련 지표
 class SpeakingMetrics {
-  final double speechRate; // 말하기 속도 (단어/분)
+  final double speechRate; // 말하기 속도 (WPM)
   final double tonality; // 음성 톤 (%)
   final double clarity; // 명확성 (%)
   final List<HabitPattern> habitPatterns; // 습관적 패턴

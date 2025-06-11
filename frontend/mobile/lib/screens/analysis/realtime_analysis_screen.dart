@@ -85,7 +85,9 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     super.initState();
     
     // 세션 타입을 STT 시나리오로 변환
+    print('🎯 원본 세션 타입: ${widget.sessionType}');
     _currentScenario = _convertSessionTypeToScenario(widget.sessionType);
+    print('🎯 변환된 STT 시나리오: $_currentScenario');
     print('🎯 현재 세션 모드: ${widget.sessionType} → STT 시나리오: $_currentScenario');
     
     _initializeServices();
@@ -102,7 +104,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       _suggestedTopics = ['경력 소개', '성장 경험', '회사 지원 동기', '미래 계획', '강점과 약점'];
     } else {
       // 소개팅 모드 (기본)
-      _suggestedTopics = ['여행 경험', '좋아하는 여행지', '사진 취미', '역사적 장소', '제주도 명소'];
+    _suggestedTopics = ['여행 경험', '좋아하는 여행지', '사진 취미', '역사적 장소', '제주도 명소'];
     }
     
     // STT 스트림 구독 상태 주기적 확인
@@ -196,20 +198,27 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     }
   }
 
-  /// Realtime Service 연결
+  /// Realtime Service에 연결
   Future<void> _connectToRealtimeService() async {
     try {
-      // AuthService에서 실제 액세스 토큰 가져오기
-      final authService = AuthService();
-      final accessToken = await authService.getAccessToken();
-      
+      final accessToken = await AuthService().getAccessToken();
       if (accessToken == null) {
-        print('❌ realtime-service 연결 실패: 액세스 토큰 없음');
-        _showErrorSnackBar('인증 토큰이 없습니다. 다시 로그인해주세요.');
-        return;
+        throw Exception('액세스 토큰을 가져올 수 없습니다');
       }
       
-      final connected = await _realtimeService.connect(widget.sessionId, accessToken);
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      final sessionTitle = sessionProvider.currentSession?.name ?? '실시간 분석';
+      
+      print('📡 realtime-service 연결 시도: ${widget.sessionId}');
+      print('🎯 세션 타입: ${widget.sessionType}');
+      print('📋 세션 제목: $sessionTitle');
+      
+      final connected = await _realtimeService.connect(
+        widget.sessionId,
+        accessToken,
+        sessionType: widget.sessionType ?? '소개팅',
+        sessionTitle: sessionTitle,
+      );
       
       setState(() {
         _isRealtimeConnected = connected;
@@ -218,15 +227,85 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       if (connected) {
         print('✅ realtime-service 연결 성공');
         
+        // 🚀 실시간 지표 콜백 설정
+        _realtimeService.setRealtimeMetricsCallback(_handleRealtimeMetrics);
+        
         // 햅틱 피드백 콜백 설정
         _realtimeService.setHapticFeedbackCallback(_handleHapticFeedback);
       } else {
         print('❌ realtime-service 연결 실패');
-        _showErrorSnackBar('실시간 서비스 연결에 실패했습니다');
+        _showErrorSnackBar('실시간 서비스 연결에 실패했습니다.');
       }
     } catch (e) {
       print('❌ realtime-service 연결 오류: $e');
       _showErrorSnackBar('실시간 서비스 연결 오류: $e');
+    }
+  }
+
+  /// 🚀 백엔드에서 계산된 실시간 지표 처리
+  void _handleRealtimeMetrics(Map<String, dynamic> data) {
+    print('📊 실시간 지표 수신: $data');
+    
+    try {
+      final metrics = data['metrics'] as Map<String, dynamic>?;
+      if (metrics == null) {
+        print('⚠️ 지표 데이터가 없습니다');
+        return;
+      }
+      
+      print('🔍 시나리오별 지표 처리: $_currentScenario');
+      
+      setState(() {
+        // 말하기 속도는 모든 시나리오 공통
+        if (metrics['speakingSpeed'] != null) {
+          _speakingSpeed = (metrics['speakingSpeed'] as num).round();
+          print('📊 말하기 속도 업데이트: $_speakingSpeed WPM');
+        }
+        
+        // 시나리오별 지표 처리
+        if (_currentScenario == 'presentation') {
+          // 발표 시나리오: confidence, persuasion, clarity
+          if (metrics['confidence'] != null) {
+            _likability = (metrics['confidence'] as num).round(); // confidence를 likability 위치에
+            print('📊 발표 자신감 업데이트: $_likability');
+          }
+          if (metrics['persuasion'] != null) {
+            _interest = (metrics['persuasion'] as num).round(); // persuasion을 interest 위치에
+            print('📊 발표 설득력 업데이트: $_interest');
+          }
+          
+        } else if (_currentScenario == 'interview') {
+          // 면접 시나리오: confidence, stability, clarity
+          if (metrics['confidence'] != null) {
+            _likability = (metrics['confidence'] as num).round();
+            print('📊 면접 자신감 업데이트: $_likability');
+          }
+          if (metrics['stability'] != null) {
+            _interest = (metrics['stability'] as num).round();
+            print('📊 면접 안정감 업데이트: $_interest');
+          }
+          
+        } else {
+          // 소개팅 시나리오: likeability, interest, emotion
+          if (metrics['likeability'] != null) {
+            _likability = (metrics['likeability'] as num).round();
+            print('📊 호감도 업데이트: $_likability');
+          }
+          if (metrics['interest'] != null) {
+            _interest = (metrics['interest'] as num).round();
+            print('📊 관심도 업데이트: $_interest');
+          }
+        }
+        
+        // 감정 상태 (모든 시나리오 공통)
+        if (metrics['emotion'] != null) {
+          _emotionState = metrics['emotion'].toString();
+          print('📊 감정 상태 업데이트: $_emotionState');
+        }
+      });
+      
+    } catch (e) {
+      print('❌ 실시간 지표 처리 오류: $e');
     }
   }
 
@@ -357,12 +436,134 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   /// Apple Watch 햅틱 전송
   Future<void> _sendHapticToWatch(String type, String pattern, String message) async {
     try {
-      // WatchService는 message 파라미터만 받으므로 형식을 맞춰서 전송
-      final hapticMessage = '$type: $message';
-      await _watchService.sendHapticFeedback(hapticMessage);
-      print('📱 Apple Watch 햅틱 전송: $type - $pattern');
+      // 🎯 백엔드 패턴을 Apple Watch MVP 패턴으로 매핑
+      final mappedPattern = _mapToWatchPattern(type);
+      
+      if (mappedPattern != null) {
+        // 🎯 패턴 기반 햅틱 전송 (MVP 패턴 사용)
+        await _watchService.sendHapticFeedbackWithPattern(
+          message: message,
+          pattern: mappedPattern['pattern']!,
+          category: mappedPattern['category']!,
+          patternId: mappedPattern['patternId']!,
+          sessionType: widget.sessionType, // 🔥 세션 타입 전달
+        );
+        print('📱 Apple Watch MVP 패턴 햅틱 전송: ${mappedPattern['patternId']} - $message');
+      } else {
+        // 🔄 매핑되지 않은 패턴은 기본 햅틱으로 폴백
+        await _watchService.sendHapticFeedback(message);
+        print('📱 Apple Watch 기본 햅틱 전송: $type - $message');
+      }
     } catch (e) {
       print('❌ Apple Watch 햅틱 전송 실패: $e');
+      // 실패 시 기본 햅틱으로 재시도
+      try {
+        await _watchService.sendHapticFeedback(message);
+        print('📱 Apple Watch 기본 햅틱 폴백 성공');
+      } catch (fallbackError) {
+        print('❌ Apple Watch 기본 햅틱 폴백도 실패: $fallbackError');
+      }
+    }
+  }
+
+  /// 🎯 백엔드 햅틱 타입을 Apple Watch MVP 패턴으로 매핑
+  Map<String, String>? _mapToWatchPattern(String backendType) {
+    const patternMapping = {
+      // 자신감 관련 (발표/면접) - 개선 메시지들
+      'confidence_low': {
+        'patternId': 'R2', // 강한 경고 패턴 (자신감 하락 → 강한 피드백 필요)
+        'pattern': 'interest_down',
+        'category': 'reaction',
+      },
+      'confidence_down': {
+        'patternId': 'R2', // 강한 경고 패턴 (자신감 급하락 → 강한 경고)
+        'pattern': 'interest_down',
+        'category': 'reaction',
+      },
+      
+      // 🎉 자신감 우수 - R1 패턴 활용
+      'confidence_excellent': {
+        'patternId': 'R1', // 호감도 상승 패턴 (아름다운 4단계 상승 파동)
+        'pattern': 'likability_up',
+        'category': 'reaction',
+      },
+      
+      // 설득력 관련 (발표)
+      'persuasion_low': {
+        'patternId': 'L3', // 질문 제안 패턴 (물음표 형태)
+        'pattern': 'question_suggestion',
+        'category': 'listener',
+      },
+      
+      // 🎉 설득력 우수 - R1 패턴 활용
+      'persuasion_excellent': {
+        'patternId': 'R1', // 호감도 상승 패턴
+        'pattern': 'likability_up',
+        'category': 'reaction',
+      },
+      
+      // 안정감 관련 (면접)
+      'stability_low': {
+        'patternId': 'F2', // 침묵 관리 패턴 (부드러운 알림)
+        'pattern': 'silence_management',
+        'category': 'flow',
+      },
+      
+      // 🎉 안정감 우수 - R1 패턴 활용
+      'stability_excellent': {
+        'patternId': 'R1', // 호감도 상승 패턴
+        'pattern': 'likability_up',
+        'category': 'reaction',
+      },
+      
+      // 호감도 관련 (소개팅) - 개선 메시지
+      'likeability_low': {
+        'patternId': 'F1', // 주제 전환 패턴 (호감도 낮을 때 주제 전환 제안)
+        'pattern': 'topic_change',
+        'category': 'flow',
+      },
+      
+      // 🎉 호감도 우수 - R1 패턴 활용
+      'likeability_excellent': {
+        'patternId': 'R1', // 호감도 상승 패턴 (본래 용도)
+        'pattern': 'likability_up',
+        'category': 'reaction',
+      },
+      
+      // 관심도 관련 (소개팅) - 개선 메시지들
+      'interest_down': {
+        'patternId': 'F1', // 주제 전환 패턴 (관심도 하락 → 주제 전환 제안)
+        'pattern': 'topic_change',
+        'category': 'flow',
+      },
+      'interest_low': {
+        'patternId': 'F1', // 주제 전환 패턴 (관심도 낮을 때 주제 전환 제안)
+        'pattern': 'topic_change',
+        'category': 'flow',
+      },
+      
+      // 🎉 관심도 우수 - R1 패턴 활용
+      'interest_excellent': {
+        'patternId': 'R1', // 호감도 상승 패턴
+        'pattern': 'likability_up',
+        'category': 'reaction',
+      },
+      
+      // 말하기 속도 관련
+      'speed_fast': {
+        'patternId': 'S1', // 속도 조절 패턴
+        'pattern': 'speed_control',
+        'category': 'speaker',
+      },
+    };
+    
+    final mapping = patternMapping[backendType];
+    if (mapping != null) {
+      print('🎯 패턴 매핑 성공: $backendType -> ${mapping['patternId']} (${mapping['category']})');
+      return Map<String, String>.from(mapping);
+    } else {
+      print('⚠️ 매핑되지 않은 백엔드 패턴: $backendType');
+      return null;
     }
   }
 
@@ -499,6 +700,11 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
         print('ℹ️ STT 상태: ${response.message}');
         break;
         
+      case 'recording_stopped':
+        print('🔴 STT 녹음 중지: ${response.message ?? "녹음이 중지되었습니다"}');
+        // 녹음 중지 시 특별한 처리가 필요하면 여기에 추가
+        break;
+        
       case 'error':
         print('❌ STT 에러: ${response.message}');
         _showErrorSnackBar('음성 인식 오류: ${response.message}');
@@ -620,15 +826,15 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     if (wpm == 0) return '측정 중';
     
     if (wpm < 80) {
-      return '천천히 ($wpm단어/분)';
+      return '천천히 (${wpm}WPM)';
     } else if (wpm < 120) {
-      return '적당히 ($wpm단어/분)';
+      return '적당히 (${wpm}WPM)';
     } else if (wpm < 160) {
-      return '보통 ($wpm단어/분)';
+      return '보통 (${wpm}WPM)';
     } else if (wpm < 200) {
-      return '빠르게 ($wpm단어/분)';
+      return '빠르게 (${wpm}WPM)';
     } else {
-      return '매우 빠르게 ($wpm단어/분)';
+      return '매우 빠르게 (${wpm}WPM)';
     }
   }
 
@@ -801,7 +1007,8 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
         message: message,
         pattern: pattern,
         category: category,
-        patternId: patternId
+        patternId: patternId,
+        sessionType: widget.sessionType, // 🔥 세션 타입 전달
       );
     } catch (e) {
       print('❌ 패턴 햅틱 전송 실패: $e');
@@ -917,6 +1124,9 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
         return;
       }
       
+      print('📤 STT 결과 전송 - 실제 scenario 값: $_currentScenario');
+      print('📤 STT 결과 전송 - 세션 타입: ${widget.sessionType}');
+      
       final success = await _realtimeService.sendSTTResult(
         sessionId: widget.sessionId,
         sttResponse: response,
@@ -1019,7 +1229,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       });
     } else {
       // 녹음 시작
-      final success = await _audioService.startRealTimeRecording();
+      final success = await _audioService.startRealTimeRecording(scenario: _currentScenario);
       if (success) {
         setState(() {
           _isRecording = true;
@@ -1035,11 +1245,87 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     _watchSyncTimer.cancel();
     _segmentSaveTimer?.cancel(); // 🔥 세그먼트 저장 타이머 취소
 
-    // 🔥 세션 종료 전 최종 데이터 저장 및 분석
-    await _finalizeSession();
+    // 로딩 표시
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 40),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 아이콘과 애니메이션
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.analytics_outlined,
+                    color: AppColors.primaryColor,
+                    size: 30,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              // 로딩 인디케이터
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryColor,
+                  strokeWidth: 3,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // 제목
+              const Text(
+                '분석 결과 생성 중',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textColor,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 설명
+              const Text(
+                '대화 내용을 분석하고\n개인화된 피드백을 준비하고 있습니다',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF757575),
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
 
-    // 오디오 녹음 중지
-    await _audioService.stopRecording();
+    try {
+      // 🔥 세션 종료 전 최종 데이터 저장 및 분석
+      await _finalizeSession();
+
+      // 오디오 녹음 중지
+      await _audioService.stopRecording();
 
     // Watch에 세션 종료 알림
     try {
@@ -1052,16 +1338,84 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     Provider.of<AnalysisProvider>(context, listen: false)
         .stopAnalysis(widget.sessionId);
 
-    // 🔥 세션 분석 완료 - 바로 해당 세션의 분석 요약 화면으로 이동
-    Navigator.pushAndRemoveUntil(
+      // 🔥 분석 결과가 준비될 때까지 잠시 대기 (서버 처리 시간)
+      await Future.delayed(Duration(seconds: 3));
+
+      // 🔥 분석 결과 존재 여부 확인
+      final analysisProvider = Provider.of<AnalysisProvider>(context, listen: false);
+      bool analysisReady = false;
+      int retryCount = 0;
+      const maxRetries = 5;
+
+      while (!analysisReady && retryCount < maxRetries) {
+        try {
+          final analysis = await analysisProvider.getSessionAnalysis(widget.sessionId);
+          if (analysis != null) {
+            analysisReady = true;
+            print('✅ 분석 결과 확인 완료');
+          } else {
+            print('⏳ 분석 결과 대기 중... (${retryCount + 1}/$maxRetries)');
+            await Future.delayed(Duration(seconds: 2));
+            retryCount++;
+          }
+        } catch (e) {
+          print('⚠️ 분석 결과 확인 실패: $e');
+          await Future.delayed(Duration(seconds: 2));
+          retryCount++;
+        }
+      }
+
+      // 로딩 다이얼로그 닫기
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (analysisReady) {
+        // 🔥 세션 분석 완료 - 바로 해당 세션의 분석 요약 화면으로 이동
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AnalysisSummaryScreen(
+                sessionId: widget.sessionId,
+                sessionType: widget.sessionType,
+              ),
+            ),
+            (route) => false, // 모든 이전 화면 제거
+          );
+        }
+      } else {
+        // 분석 결과를 불러올 수 없는 경우, 에러 메시지와 함께 홈으로 이동
+        if (mounted) {
+          _showErrorSnackBar('분석 결과를 생성하는 데 시간이 걸리고 있습니다. 잠시 후 분석 탭에서 확인해주세요.');
+          
+          // 홈 화면으로 이동
+    Navigator.pushNamedAndRemoveUntil(
       context,
-      MaterialPageRoute(
-        builder: (context) => AnalysisSummaryScreen(
-          sessionId: widget.sessionId,
-        ),
-      ),
-      (route) => false, // 모든 이전 화면 제거
-    );
+      '/main',
+      (route) => false,
+            arguments: {'initialTabIndex': 0}, // 홈 탭
+          );
+        }
+      }
+
+    } catch (e) {
+      print('❌ 세션 종료 처리 중 오류: $e');
+      
+      // 로딩 다이얼로그 닫기
+      if (mounted) {
+        Navigator.of(context).pop();
+        _showErrorSnackBar('세션 종료 처리 중 오류가 발생했습니다: $e');
+        
+        // 오류 발생 시에도 홈으로 이동
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/main',
+          (route) => false,
+          arguments: {'initialTabIndex': 0},
+        );
+      }
+    }
   }
 
   void _showErrorSnackBar(String message) {
@@ -1284,17 +1638,17 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   String _convertSessionTypeToScenario(String? sessionType) {
     switch (sessionType) {
       case '발표':
-        return 'presentation';
+        return 'presentation'; // presentation 시나리오 사용
       case '소개팅':
-        return 'dating';
+        return 'dating'; // dating 시나리오 사용
       case '면접':
-        return 'interview';
+        return 'interview'; // interview 시나리오 사용
       case '코칭':
-        return 'presentation';  // 코칭도 presentation으로 매핑
+        return 'business'; // 코칭은 business로 매핑
       case '회의':  // 혹시 모를 레거시 케이스
-        return 'presentation';
+        return 'business';
       default:
-        return 'dating';  // 기본값
+        return 'general';  // 기본값을 general로 변경
     }
   }
 
@@ -1845,49 +2199,49 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
             ),
           ] else ...[
             // 소개팅 모드 (기본)
-            Row(
-              children: [
-                Expanded(
-                  child: _buildMetricCard(
-                    title: '감정 상태',
-                    value: _emotionState,
-                    icon: Icons.sentiment_satisfied_alt,
-                    isTextValue: true,
-                  ),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMetricCard(
+                  title: '감정 상태',
+                  value: _emotionState,
+                  icon: Icons.sentiment_satisfied_alt,
+                  isTextValue: true,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildMetricCard(
-                    title: '말하기 속도',
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildMetricCard(
+                  title: '말하기 속도',
                     value: _getSpeedText(_speakingSpeed),
-                    icon: Icons.speed,
+                  icon: Icons.speed,
                     progressValue: _speakingSpeed > 0 ? _speakingSpeed / 200 : 0,
-                  ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildMetricCard(
-                    title: '호감도',
-                    value: '$_likability%',
-                    icon: Icons.favorite,
-                    progressValue: _likability / 100,
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMetricCard(
+                  title: '호감도',
+                  value: '$_likability%',
+                  icon: Icons.favorite,
+                  progressValue: _likability / 100,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildMetricCard(
-                    title: '관심도',
-                    value: '$_interest%',
-                    icon: Icons.star,
-                    progressValue: _interest / 100,
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildMetricCard(
+                  title: '관심도',
+                  value: '$_interest%',
+                  icon: Icons.star,
+                  progressValue: _interest / 100,
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
           ],
         ],
       ),
@@ -2068,7 +2422,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
             backgroundColor: Colors.red,
             child: IconButton(
               icon: const Icon(Icons.stop, color: Colors.white),
-              onPressed: _endSession,
+              onPressed: _showEndSessionDialog,
             ),
           ),
           CircleAvatar(
@@ -2106,5 +2460,79 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       default:
         return Icons.people;
     }
+  }
+
+  void _showEndSessionDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.stop_circle_outlined,
+                color: Colors.red[600],
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                '세션 종료',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textColor,
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            '현재 진행 중인 분석 세션을 종료하고\n결과를 생성하시겠습니까?',
+            style: TextStyle(
+              fontSize: 16,
+              color: Color(0xFF757575),
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: const Text(
+                '계속 진행',
+                style: TextStyle(
+                  color: Color(0xFF757575),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // 다이얼로그 닫기
+                _endSession(); // 세션 종료
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                '종료하기',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

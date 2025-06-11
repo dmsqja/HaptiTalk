@@ -17,25 +17,40 @@ class AnalysisRepository {
 
   AnalysisRepository(this._apiService, this._storageService);
 
-  // 분석 결과 조회
+  // 세션 ID로 분석 결과 조회 (리포트 기반)
   Future<AnalysisResult> getAnalysisResult(String sessionId) async {
     try {
-      print('📊 세션 분석 결과 조회: $sessionId');
+      print('🔍 분석 결과 조회 시작: $sessionId');
       
-      // 🔥 실제 report-service API 호출로 변경 (올바른 경로)
-      final response = await _apiService.post('/reports/generate/$sessionId', body: {});
+      // 🔥 1단계: 세션 ID로 직접 기존 리포트 조회
+      try {
+        final sessionReportResponse = await _apiService.get('/reports/session/$sessionId');
+        
+        if (sessionReportResponse['success'] == true && sessionReportResponse['data'] != null) {
+          print('✅ 기존 리포트 조회 성공: $sessionId');
+          return AnalysisResult.fromApiResponse(sessionReportResponse['data']);
+        }
+      } catch (e) {
+        print('⚠️ 기존 리포트 없음, 새로 생성: $e');
+      }
       
-      if (response['success'] == true && response['data'] != null) {
-        print('✅ 실제 분석 결과 조회 성공');
-        return AnalysisResult.fromApiResponse(response['data']);
+      // 🔥 2단계: 기존 리포트가 없으면 새로 생성
+      print('🔄 새 리포트 생성 시작: $sessionId');
+      final generateResponse = await _apiService.post('/reports/generate/$sessionId', body: {
+        'format': 'json',
+        'includeCharts': true,
+        'detailLevel': 'detailed'
+      });
+      
+      if (generateResponse['success'] == true && generateResponse['data'] != null) {
+        print('✅ 새 분석 결과 생성 성공');
+        return AnalysisResult.fromApiResponse(generateResponse['data']);
       } else {
-        print('⚠️ API 응답 오류, 데모 데이터 사용: ${response['success']}');
-        // API 오류 시 데모 데이터 폴백
+        print('⚠️ API 응답 오류, 데모 데이터 사용: ${generateResponse['success']}');
         return await _loadDemoAnalysisResult(sessionId);
       }
     } catch (e) {
       print('❌ 분석 결과 API 호출 실패: $e');
-      // API 연결 실패 시 데모 데이터 반환
       return await _loadDemoAnalysisResult(sessionId);
     }
   }
@@ -56,13 +71,29 @@ class AnalysisRepository {
         List<AnalysisResult> results = [];
         for (var reportData in reportsData) {
           try {
-            // 각 리포트에 대해 상세 정보 조회 (올바른 경로)
-            final detailResponse = await _apiService.post('/reports/generate/${reportData['sessionId']}', body: {});
+            // 🔥 리포트 ID가 있으면 그대로 사용, 없으면 _id 사용, 그것도 없으면 sessionId 사용
+            final reportId = reportData['id'] ?? reportData['_id']?.toString() ?? reportData['sessionId'];
+            if (reportId == null) {
+              print('⚠️ 리포트 ID를 찾을 수 없음: $reportData');
+              continue;
+            }
+            
+            // 🔧 reportId가 MongoDB ObjectId 형식이면 리포트 ID로, 그렇지 않으면 세션 ID로 조회
+            String endpoint;
+            if (reportId.length == 24 && RegExp(r'^[0-9a-fA-F]+$').hasMatch(reportId)) {
+              // MongoDB ObjectId 형식 (24자리 16진수)
+              endpoint = '/reports/$reportId';
+            } else {
+              // UUID 또는 다른 형식 - 세션 ID로 조회
+              endpoint = '/reports/session/$reportId';
+            }
+            
+            final detailResponse = await _apiService.get(endpoint);
             if (detailResponse['success'] == true && detailResponse['data'] != null) {
               results.add(AnalysisResult.fromApiResponse(detailResponse['data']));
             }
           } catch (e) {
-            print('⚠️ 개별 리포트 조회 실패: ${reportData['sessionId']} - $e');
+            print('⚠️ 개별 리포트 조회 실패: ${reportData['id'] ?? reportData['_id'] ?? reportData['sessionId']} - $e');
             // 개별 실패는 무시하고 계속 진행
           }
         }
@@ -308,6 +339,7 @@ class AnalysisRepository {
         category: '소개팅',
         emotionData: emotionData.cast<EmotionData>(),
         emotionChangePoints: emotionChangePoints,
+        rawApiData: {}, // 🔥 빈 맵으로 초기화 (데모 데이터용)
         metrics: SessionMetrics(
           totalDuration: 1800, // 30분
           audioRecorded: true,
@@ -341,6 +373,67 @@ class AnalysisRepository {
       );
     } catch (e) {
       throw Exception('데모 분석 결과 생성에 실패했습니다: $e');
+    }
+  }
+
+  // 분석 결과 삭제
+  Future<void> deleteAnalysisResult(String sessionId) async {
+    try {
+      print('🗑️ 세션 분석 결과 삭제: $sessionId');
+      
+      // 1단계: 먼저 리포트 목록에서 해당 세션의 리포트 ID 찾기
+      try {
+        final reportsResponse = await _apiService.get('/reports');
+        
+        if (reportsResponse['success'] == true && reportsResponse['data'] != null) {
+          final reportsData = reportsResponse['data']['reports'] as List<dynamic>;
+          
+          // 해당 세션 ID의 리포트 찾기
+          final sessionReport = reportsData.firstWhere(
+            (report) => report['sessionId'] == sessionId,
+            orElse: () => null,
+          );
+          
+          if (sessionReport != null) {
+            final reportId = sessionReport['id'] ?? sessionReport['_id'];
+            
+            if (reportId != null && reportId.toString().isNotEmpty) {
+              // 2단계: 리포트 API로 삭제
+              await _apiService.delete('/reports/$reportId');
+              print('✅ 서버에서 리포트 삭제 성공: $reportId');
+            }
+          }
+        }
+      } catch (e) {
+        print('⚠️ 서버 삭제 실패: $e, 로컬에서만 삭제');
+      }
+      
+      // 3단계: 로컬 스토리지에서도 삭제
+      await _deleteLocalAnalysisResult(sessionId);
+      print('✅ 로컬 삭제 완료: $sessionId');
+      
+    } catch (e) {
+      print('❌ 분석 결과 삭제 실패: $e');
+      throw Exception('분석 결과 삭제 실패: $e');
+    }
+  }
+
+  // 로컬 스토리지에서 분석 결과 삭제
+  Future<void> _deleteLocalAnalysisResult(String sessionId) async {
+    try {
+      // 기존 분석 결과 목록 조회
+      List<AnalysisResult> results = await _getLocalAnalysisHistory();
+
+      // 해당 세션 제거
+      results.removeWhere((result) => result.sessionId == sessionId);
+
+      // 업데이트된 결과 목록 저장
+      await _storageService.setItem(
+        'analysis_results',
+        json.encode(results.map((r) => r.toJson()).toList()),
+      );
+    } catch (e) {
+      print('❌ 로컬 분석 결과 삭제 실패: $e');
     }
   }
 }

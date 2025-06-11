@@ -213,4 +213,21 @@ class AnalysisProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
   }
+
+  // 분석 결과 삭제
+  Future<void> deleteAnalysisResult(String sessionId) async {
+    try {
+      _setLoading(true);
+
+      await _analysisRepository.deleteAnalysisResult(sessionId);
+
+      // 로컬 기록에서도 제거
+      _analysisHistory.removeWhere((analysis) => analysis.sessionId == sessionId);
+
+      _setLoading(false);
+      notifyListeners();
+    } catch (e) {
+      _setError(e.toString());
+    }
+  }
 }

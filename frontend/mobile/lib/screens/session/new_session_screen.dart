@@ -351,65 +351,112 @@ class _NewSessionScreenState extends State<NewSessionScreen> {
       childAspectRatio: 1.0,
       children: _sessionModes.entries.map((entry) {
         final isSelected = entry.key == _selectedSessionMode;
+        // 🔥 소개팅과 면접 모드는 준비 중 상태
+        final isDisabled = entry.key == '소개팅' || entry.key == '면접(인터뷰)';
+        
         return GestureDetector(
           onTap: () {
-            setState(() {
-              _selectedSessionMode = entry.key;
-            });
+            if (isDisabled) {
+              // 준비 중 다이얼로그 표시
+              _showComingSoonDialog(entry.key);
+            } else {
+              setState(() {
+                _selectedSessionMode = entry.key;
+              });
+            }
           },
           child: Container(
             decoration: BoxDecoration(
-              color: isSelected
-                  ? AppColors.primaryColor.withOpacity(0.1)
-                  : const Color(0xFFF5F5F5),
+              color: isDisabled 
+                  ? Colors.grey[100] 
+                  : (isSelected
+                      ? AppColors.primaryColor.withOpacity(0.1)
+                      : const Color(0xFFF5F5F5)),
               borderRadius: BorderRadius.circular(16),
-              border:
-                  isSelected ? Border.all(color: AppColors.primaryColor) : null,
+              border: isSelected 
+                  ? Border.all(color: AppColors.primaryColor) 
+                  : (isDisabled 
+                      ? Border.all(color: Colors.grey[300]!) 
+                      : null),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
+                // 메인 콘텐츠를 전체 영역에 맞춤
+                Positioned.fill(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _getIconForSessionMode(entry.key),
+                          color: isDisabled 
+                              ? Colors.grey[400] 
+                              : AppColors.primaryColor,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        entry.key,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: isDisabled 
+                              ? Colors.grey[500] 
+                              : const Color(0xFF424242),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          isDisabled ? '준비 중' : entry.value,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDisabled 
+                                ? Colors.grey[500] 
+                                : const Color(0xFF757575),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  child: Icon(
-                    _getIconForSessionMode(entry.key),
-                    color: AppColors.primaryColor,
-                    size: 24,
-                  ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  entry.key,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: Color(0xFF424242),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    entry.value,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF757575),
+                // 준비 중 배지
+                if (isDisabled)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[300],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'SOON',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -541,5 +588,61 @@ class _NewSessionScreenState extends State<NewSessionScreen> {
       default:
         return Icons.chat_bubble_outline;
     }
+  }
+
+  void _showComingSoonDialog(String mode) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.construction,
+                color: Colors.orange[600],
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                '준비 중인 기능',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textColor,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            '$mode 모드는 현재 개발 중입니다.\n곧 만나볼 수 있도록 준비하고 있어요!',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Color(0xFF757575),
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: const Text(
+                '확인',
+                style: TextStyle(
+                  color: AppColors.primaryColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

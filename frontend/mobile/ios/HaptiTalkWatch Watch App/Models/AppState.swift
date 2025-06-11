@@ -281,6 +281,12 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
                let category = message["category"] as? String,
                let patternId = message["patternId"] as? String {
                 
+                // 🔥 sessionType 추출 및 업데이트
+                if let receivedSessionType = message["sessionType"] as? String {
+                    self.sessionType = receivedSessionType
+                    print("🔥 Watch: 세션 타입 업데이트됨 - \(receivedSessionType)")
+                }
+                
                 print("🎯 Watch: 패턴 햅틱 수신 [\(patternId)/\(category)]: \(feedbackMessage)")
                 self.showHapticNotificationWithPattern(
                     message: feedbackMessage,
@@ -309,6 +315,21 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
                     self.showHapticNotification(message: feedback)
                 }
             }
+        case "initializeVisualFeedback":
+            // 🔄 시각적 피드백 초기화
+            print("🔄 Watch: 시각적 피드백 초기화 수신")
+            self.showVisualFeedback = false
+            self.currentVisualPattern = ""
+            self.visualAnimationIntensity = 0.0
+            self.visualPatternColor = .blue
+            print("🔄 Watch: 시각적 피드백 상태 초기화 완료")
+        case "clearVisualFeedback":
+            // 🧹 시각적 피드백 클리어
+            print("🧹 Watch: 시각적 피드백 클리어 수신")
+            self.showVisualFeedback = false
+            self.currentVisualPattern = ""
+            self.visualAnimationIntensity = 0.0
+            print("🧹 Watch: 시각적 피드백 클리어 완료")
         default:
             print("Watch: Unhandled action from iPhone: \(action)")
             break
@@ -430,7 +451,7 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         triggerHapticFeedback(for: message)
         
         // 5초 후 자동으로 알림 닫기 (필요시)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             self.showHapticFeedback = false
         }
     }
@@ -516,19 +537,41 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         category: String,
         patternId: String
     ) {
-        hapticFeedbackMessage = message
+        // 🎯 세션 모드별 동적 시각적 메시지 생성 (기존 message 무시)
+        let dynamicMessage = generateSessionSpecificMessage(
+            patternId: patternId, 
+            category: category, 
+            sessionType: sessionType
+        )
+        
+        hapticFeedbackMessage = dynamicMessage
         showHapticFeedback = true
         
-        // 🎯 설계 문서의 8개 기본 MVP 패턴 적용
+        // 🎯 HaptiTalk MVP 햅틱 패턴 (설계 문서 기반)
         triggerMVPHapticPattern(patternId: patternId, pattern: pattern)
         
-        // 🎨 시각적 피드백 트리거
-        triggerVisualFeedback(patternId: patternId, category: category)
+        // 🎨 시각적 피드백 트리거 (세션 타입 포함)
+        triggerVisualFeedback(patternId: patternId, category: category, sessionType: sessionType)
         
-        // 5초 후 자동으로 알림 닫기
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+        // 🔥 3초 후 자동으로 알림 닫기
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            print("🔥 Watch: 3초 후 시각적 피드백 자동 숨김")
             self.showHapticFeedback = false
             self.showVisualFeedback = false
+            self.currentVisualPattern = ""
+            self.visualAnimationIntensity = 0.0
+        }
+        
+        // 🔥 추가 안전장치: 5초 후 강제 초기화
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            if self.showVisualFeedback {
+                print("🚨 Watch: 5초 후 강제 시각적 피드백 초기화")
+                self.showHapticFeedback = false
+                self.showVisualFeedback = false
+                self.currentVisualPattern = ""
+                self.visualAnimationIntensity = 0.0
+                self.hapticFeedbackMessage = ""
+            }
         }
     }
     
@@ -540,241 +583,136 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         print("🎯 Watch: MVP 햅틱 패턴 실행 시작 - ID: \(patternId), 패턴: \(pattern)")
         
         switch patternId {
-        case "S1":  // 속도 조절 패턴 - 빠른 3회 연속 진동 (100ms 간격)
-            playSpeedControlPattern(device: device)
-        case "L1":  // 경청 강화 패턴 - 점진적 강도 증가 3회 진동
-            playListeningPattern(device: device)
-        case "F1":  // 주제 전환 패턴 - 더 긴 진동으로 수정
-            playTopicChangePattern(device: device)
-        case "R1":  // 호감도 상승 패턴 - 점진적 증가 파동형 3회
-            playLikabilityUpPattern(device: device)
-        case "F2":  // 침묵 관리 패턴 - 부드러운 2회 탭 (300ms 간격)
-            playSilenceManagementPattern(device: device)
-        case "S2":  // 음량 조절 패턴 - 강도 변화 2회 진동
-            playVolumeControlPattern(device: device, pattern: pattern)
-        case "R2":  // 관심도 하락 패턴 - 모든 단계를 강하게 수정
-            playInterestDownPattern(device: device)
-        case "L3":  // 질문 제안 패턴 - 2회 짧은 탭 + 1회 긴 진동
-            playQuestionSuggestionPattern(device: device)
-        default:
-            // 기본 패턴 - 표준 알림
-            print("🎯 Watch: 기본 햅틱 패턴 실행")
-            playDefaultHaptic(device: device)
+        case "S1": playSpeedControlPattern(device: device)
+        case "L1": playListeningPattern(device: device)
+        case "F1": playTopicChangePattern(device: device)
+        case "R1": playLikabilityUpPattern(device: device)
+        case "F2": playSilenceManagementPattern(device: device)
+        case "S2": playVolumeControlPattern(device: device, pattern: pattern)
+        case "R2": playInterestDownPattern(device: device)
+        case "L3": playQuestionSuggestionPattern(device: device)
+        default: playDefaultHaptic(device: device)
         }
         
         print("🎯 Watch: MVP 햅틱 패턴 실행 완료 - ID: \(patternId)")
         #endif
     }
     
-    // 📊 S1: 속도 조절 패턴 (메타포: 빠른 심장 박동) - 🔥 확실한 간격 보장
+    // 📊 S1: 속도 조절 패턴
     private func playSpeedControlPattern(device: WKInterfaceDevice) {
-        print("🎯 Watch: S1 속도조절 패턴 실행 시작 - 3회 진동 예정")
-        
-        // 첫 번째 강한 진동
         device.play(.notification)
-        print("🔥 S1: 1/3 진동 실행 완료")
-        
-        // 두 번째 강한 진동 (0.8초 후 - 매우 긴 간격)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             device.play(.notification)
-            print("🔥 S1: 2/3 진동 실행 완료")
         }
-        
-        // 세 번째 강한 진동 (1.6초 후 - 매우 긴 간격)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
             device.play(.notification)
-            print("🔥 S1: 3/3 진동 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 📊 L1: 경청 강화 패턴 (메타포: 점진적 주의 집중) - 🔥 확실한 간격 보장
+    // 📊 L1: 경청 강화 패턴
     private func playListeningPattern(device: WKInterfaceDevice) {
-        print("🎯 Watch: L1 경청강화 패턴 실행 시작 - 4단계 예정")
-        
-        // 1단계: 매우 약한 단일 탭
         device.play(.click)
-        print("🔥 L1: 1/4 매우 약함 실행 완료")
-        
-        // 2단계: 약간 강한 단일 탭 (1.0초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             device.play(.directionUp)
-            print("🔥 L1: 2/4 약간 강함 실행 완료")
         }
-        
-        // 3단계: 강한 단일 탭 (2.0초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             device.play(.notification)
-            print("🔥 L1: 3/4 강함 실행 완료")
         }
-        
-        // 4단계: 매우 강한 더블 탭 (3.0초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             device.play(.notification)
-            print("🔥 L1: 4/4-1 매우 강함 첫번째")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 device.play(.notification)
-                print("🔥 L1: 4/4-2 매우 강함 두번째 - 패턴 완료!")
             }
         }
     }
     
-    // 📊 F1: 주제 전환 패턴 (메타포: 페이지 넘기기) - 🔥 더 긴 진동으로 수정
+    // 📊 F1: 주제 전환 패턴 (관심도 하락 → 주제 전환 제안)
     private func playTopicChangePattern(device: WKInterfaceDevice) {
-        print("🎯 Watch: F1 주제전환 패턴 실행 시작 - 2회 매우 긴 진동 예정")
-        
-        // 첫 번째 매우 긴 진동 (더 강하고 길게)
         device.play(.notification)
-        print("🔥 F1: 1/2 매우 긴 진동 실행 완료")
-        
-        // 긴 휴지 후 두 번째 매우 긴 진동 (1.5초 후 - 매우 긴 간격)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             device.play(.notification)
-            print("🔥 F1: 2/2 매우 긴 진동 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 📊 R1: 호감도 상승 패턴 (메타포: 상승하는 파동) - 🔥 확실한 간격 보장
+    // 📊 R1: 호감도 상승 패턴
     private func playLikabilityUpPattern(device: WKInterfaceDevice) {
-        print("🎯 Watch: R1 호감도상승 패턴 실행 시작 - 4단계 상승 예정")
-        
-        // 1단계: 매우 부드러운 시작
         device.play(.click)
-        print("🔥 R1: 1/4 부드러운 시작 실행 완료")
-        
-        // 2단계: 중간 상승 (0.7초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             device.play(.directionUp)
-            print("🔥 R1: 2/4 중간 상승 실행 완료")
         }
-        
-        // 3단계: 행복한 진동 (1.4초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             device.play(.success)
-            print("🔥 R1: 3/4 행복한 진동 실행 완료")
         }
-        
-        // 4단계: 지속되는 행복감 더블 탭 (2.1초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) {
             device.play(.success)
-            print("🔥 R1: 4/4-1 행복감 첫번째")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 device.play(.success)
-                print("🔥 R1: 4/4-2 행복감 두번째 - 패턴 완료!")
             }
         }
     }
     
-    // 📊 F2: 침묵 관리 패턴 (메타포: 부드러운 알림) - 🔥 간격 단축
+    // 📊 F2: 침묵 관리 패턴
     private func playSilenceManagementPattern(device: WKInterfaceDevice) {
-        print("🎯 Watch: F2 침묵관리 패턴 실행 시작 - 2회 중간 강도 탭 예정")
-        
-        // 첫 번째 중간 강도 진동 (더 강하게)
         device.play(.directionUp)
-        print("🔥 F2: 1/2 중간 강도 진동 실행 완료")
-        
-        // 짧은 침묵 후 두 번째 중간 강도 진동 (1.2초 후 - 간격 단축)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             device.play(.directionUp)
-            print("🔥 F2: 2/2 중간 강도 진동 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 📊 S2: 음량 조절 패턴 (메타포: 음파 증폭/감소) - 🔥 확실한 간격 보장
+    // 📊 S2: 음량 조절 패턴
     private func playVolumeControlPattern(device: WKInterfaceDevice, pattern: String) {
-        print("🎯 Watch: S2 음량조절 패턴 실행 시작 - 3단계 강도 변화 예정")
-        
-        // 매우 약한 시작 (단일)
         device.play(.click)
-        print("🔥 S2: 1/3 매우 약한 단일 탭 실행 완료")
-        
-        // 중간 강도 (0.8초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             device.play(.directionUp)
-            print("🔥 S2: 2/3 중간 강도 탭 실행 완료")
         }
-        
-        // 매우 강한 마지막 (1.6초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
             device.play(.notification)
-            print("🔥 S2: 3/3 매우 강한 탭 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 📊 R2: 관심도 하락 패턴 (메타포: 경고 알림) - 🔥 더 확실한 7회 진동
+    // 📊 R2: 강한 경고 패턴 (자신감 하락 → 강한 경고)
     private func playInterestDownPattern(device: WKInterfaceDevice) {
-        print("🎯 Watch: R2 관심도하락 패턴 실행 시작 - 총 7회 확실한 경고 예정")
-        
-        // 1회 강한 경고
         device.play(.notification)
-        print("🔥 R2: 1/7 강한 경고 실행 완료")
-        
-        // 2회 매우 강한 경고 (0.5초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             device.play(.notification)
-            print("🔥 R2: 2/7 매우 강한 경고 실행 완료")
         }
-        
-        // 3회 매우 강한 경고 (1.0초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             device.play(.notification)
-            print("🔥 R2: 3/7 매우 강한 경고 실행 완료")
         }
-        
-        // 4회 더블 경고 시작 (1.5초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             device.play(.notification)
-            print("🔥 R2: 4/7 더블 경고 첫번째")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 device.play(.notification)
-                print("🔥 R2: 5/7 더블 경고 두번째")
             }
         }
-        
-        // 5회 트리플 경고 시작 (2.2초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
             device.play(.notification)
-            print("🔥 R2: 6/7 트리플 경고 첫번째")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 device.play(.notification)
-                print("🔥 R2: 7/7 트리플 경고 두번째 - 패턴 완료!")
             }
         }
     }
     
-    // 📊 L3: 질문 제안 패턴 (메타포: 물음표 형태) - 🔥 더 강한 진동으로 수정
+    // 📊 L3: 질문 제안 패턴
     private func playQuestionSuggestionPattern(device: WKInterfaceDevice) {
-        print("🎯 Watch: L3 질문제안 패턴 실행 시작 - 물음표 형태 4단계 예정")
-        
-        // 첫 번째 중간 강도 점 (더 강하게)
         device.play(.directionUp)
-        print("🔥 L3: 1/4 중간 강도 점 실행 완료")
-        
-        // 두 번째 중간 강도 점 (0.6초 후, 더 강하게)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             device.play(.directionUp)
-            print("🔥 L3: 2/4 중간 강도 점 실행 완료")
         }
-        
-        // 긴 휴지 후 물음표 마침표 - 매우 강한 더블 진동 (1.8초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
             device.play(.notification)
-            print("🔥 L3: 3/4-1 물음표 마침표 첫번째")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 device.play(.notification)
-                print("🔥 L3: 3/4-2 물음표 마침표 두번째")
             }
         }
-        
-        // 질문의 여운 - 중간 강도 (2.8초 후)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
             device.play(.success)
-            print("🔥 L3: 4/4 질문의 여운 (중간 강도) 실행 완료 - 패턴 완료!")
         }
     }
     
-    // 🎨 패턴별 시각적 피드백 트리거
-    private func triggerVisualFeedback(patternId: String, category: String) {
-        print("🎨 Watch: 시각적 피드백 트리거 시작 - 패턴: \(patternId), 카테고리: \(category)")
+    // 🎨 패턴별 시각적 피드백 트리거 (세션 타입 포함)
+    private func triggerVisualFeedback(patternId: String, category: String, sessionType: String? = nil) {
+        print("🎨 Watch: 시각적 피드백 트리거 시작 - 패턴: \(patternId), 카테고리: \(category), 세션: \(sessionType ?? "기본")")
         
         currentVisualPattern = patternId
         
@@ -794,24 +732,15 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         
         // 패턴별 애니메이션 강도 설정
         switch patternId {
-        case "S1": // 속도 조절 - 빠른 펄스
-            visualAnimationIntensity = 1.0
-        case "L1": // 경청 강화 - 점진적 증가
-            visualAnimationIntensity = 0.8
-        case "F1": // 주제 전환 - 긴 페이드
-            visualAnimationIntensity = 0.6
-        case "R1": // 호감도 상승 - 상승 파동
-            visualAnimationIntensity = 0.9
-        case "F2": // 침묵 관리 - 부드러운 펄스
-            visualAnimationIntensity = 0.4
-        case "S2": // 음량 조절 - 변화하는 크기
-            visualAnimationIntensity = 0.7
-        case "R2": // 관심도 하락 - 강한 경고
-            visualAnimationIntensity = 1.0
-        case "L3": // 질문 제안 - 물음표 형태
-            visualAnimationIntensity = 0.5
-        default:
-            visualAnimationIntensity = 0.5
+        case "S1": visualAnimationIntensity = 1.0
+        case "L1": visualAnimationIntensity = 0.8
+        case "F1": visualAnimationIntensity = 0.6
+        case "R1": visualAnimationIntensity = 0.9
+        case "F2": visualAnimationIntensity = 0.4
+        case "S2": visualAnimationIntensity = 0.7
+        case "R2": visualAnimationIntensity = 1.0
+        case "L3": visualAnimationIntensity = 0.5
+        default: visualAnimationIntensity = 0.5
         }
         
         showVisualFeedback = true
@@ -820,24 +749,15 @@ class AppState: NSObject, ObservableObject, WCSessionDelegate {
         // 🔥 패턴별 실제 햅틱 지속시간에 맞춤 시각적 피드백 지속시간
         let duration: Double
         switch patternId {
-        case "S1": // 속도 조절: 3회 진동, 0.8+1.6=2.4초 + 여유 0.6초
-            duration = 3.5
-        case "L1": // 경청 강화: 4단계, 1.0+2.0+3.0=6.0초 + 여유 1.0초
-            duration = 7.5
-        case "F1": // 주제 전환: 2회 긴 진동, 1.5초 + 여유 1.0초
-            duration = 3.0
-        case "R1": // 호감도 상승: 4단계, 0.7+1.4+2.1=4.2초 + 여유 0.8초
-            duration = 5.5
-        case "F2": // 침묵 관리: 2회, 1.2초 + 여유 0.8초
-            duration = 2.5
-        case "S2": // 음량 조절: 3단계, 0.8+1.6=2.4초 + 여유 0.6초
-            duration = 3.5
-        case "R2": // 관심도 하락: 7회 진동, 총 약 3.0초 + 여유 1.0초
-            duration = 4.5
-        case "L3": // 질문 제안: 4단계, 0.6+1.8+2.8=5.2초 + 여유 0.8초
-            duration = 6.5
-        default:
-            duration = 4.0
+        case "S1": duration = 3.5
+        case "L1": duration = 7.5
+        case "F1": duration = 3.0
+        case "R1": duration = 5.5
+        case "F2": duration = 2.5
+        case "S2": duration = 3.5
+        case "R2": duration = 4.5
+        case "L3": duration = 6.5
+        default: duration = 4.0
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
@@ -882,5 +802,75 @@ struct SessionSummary: Identifiable {
     var likeabilityPercent: String
     var coreFeedback: String
     var date: Date
+}
+
+// 🎯 세션 모드별 동적 메시지 생성 확장
+extension AppState {
+    // 🎯 세션 모드별 동적 메시지 생성
+    func generateSessionSpecificMessage(
+        patternId: String, 
+        category: String, 
+        sessionType: String
+    ) -> String {
+        print("🎯 Watch: 세션별 메시지 생성 - 패턴: \(patternId), 모드: \(sessionType)")
+        
+        // 📊 세션 타입별 + 패턴별 메시지 매핑 테이블 (백엔드 메시지 기반)
+        let messageMapping: [String: [String: String]] = [
+            // 🎤 발표 모드 메시지 (백엔드 메시지 기반)
+            "발표": [
+                "S1": "🚀 조금 천천히 말해보세요", // speed_fast 매핑
+                "L1": "👂 청중과의 소통을 강화하세요", 
+                "F1": "⚠️ 주제를 바꿔보세요", // interest_down 매핑 (F1 → 주제전환)
+                "R1": "🎉 훌륭한 발표 자신감이에요!", // confidence_excellent 매핑
+                "F2": "⏸️ 적절한 휴지를 활용하세요",
+                "S2": "🔊 발표 음량을 조절하세요",
+                "R2": "💪 더 자신감 있게 말해보세요!", // confidence_low 매핑 (R2 → 강한 경고)
+                "L3": "🎯 핵심 포인트를 강조해보세요" // persuasion_low 매핑
+            ],
+            
+            // 👔 면접 모드 메시지 (백엔드 메시지 기반)
+            "면접": [
+                "S1": "🚀 답변 속도를 조절하세요",
+                "L1": "👂 면접관의 질문에 집중하세요",
+                "F1": "⚠️ 주제를 바꿔보세요", // interest_down 매핑 (F1 → 주제전환)
+                "R1": "👔 면접 자신감이 훌륭해요!", // confidence_excellent 매핑
+                "F2": "🧘‍♂️ 더 차분하게 답변해보세요", // stability_low 매핑
+                "S2": "🔊 답변 음량을 조절하세요",
+                "R2": "👔 자신감을 가지고 답변해보세요!", // confidence_low 매핑 (R2 → 강한 경고)
+                "L3": "❓ 궁금한 점을 질문해보세요"
+            ],
+            
+            // 💕 소개팅 모드 메시지 (백엔드 메시지 기반)
+            "소개팅": [
+                "S1": "🚀 대화 속도를 조절하세요",
+                "L1": "👂 상대방의 말에 집중하세요",
+                "F1": "⚠️ 주제를 바꿔보세요", // interest_down 매핑 (F1 → 주제전환)
+                "R1": "💕 상대방이 매우 좋아해요!", // likeability_excellent 매핑
+                "F2": "⏸️ 자연스러운 침묵을 활용하세요", 
+                "S2": "🔊 목소리 크기를 조절하세요",
+                "R2": "💕 더 밝고 긍정적으로 대화해보세요!", // likeability_low 매핑 (R2 → 강한 경고)
+                "L3": "🗣️ 더 흥미로운 대화를 시도해보세요!" // interest_low 매핑
+            ]
+        ]
+        
+        // 세션 타입에 맞는 메시지 찾기
+        if let sessionMessages = messageMapping[sessionType],
+           let specificMessage = sessionMessages[patternId] {
+            print("✅ Watch: 세션별 메시지 생성 성공 - \(specificMessage)")
+            return specificMessage
+        }
+        
+        // 폴백: 소개팅 모드 메시지 또는 기본 메시지
+        if let fallbackMessages = messageMapping["소개팅"],
+           let fallbackMessage = fallbackMessages[patternId] {
+            print("🔄 Watch: 폴백 메시지 사용 - \(fallbackMessage)")
+            return fallbackMessage
+        }
+        
+        // 최종 폴백: 기본 메시지
+        let defaultMessage = "📢 피드백 알림"
+        print("⚠️ Watch: 기본 메시지 사용 - \(defaultMessage)")
+        return defaultMessage
+    }
 }
 #endif 

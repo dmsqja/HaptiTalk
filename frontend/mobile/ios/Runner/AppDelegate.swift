@@ -104,6 +104,10 @@ import WatchConnectivity
           "patternId": patternId
         ]
         
+        if let sessionType = args["sessionType"] as? String {
+          watchMessage["sessionType"] = sessionType
+        }
+        
         if let timestamp = args["timestamp"] as? Int64 {
           watchMessage["timestamp"] = timestamp
         }
