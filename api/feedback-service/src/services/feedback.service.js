@@ -186,12 +186,12 @@ const decideFeedback = (context, userSettings) => {
         return null;
     }
 
-    // 피드백 유형별 설정 및 메시지
+    // 피드백 유형별 설정 및 메시지 (프론트엔드 동기화)
     const feedbackConfig = {
         speaking_pace: {
-            patternId: 'S1',
+            patternId: 'D1',
             priority: 'high',
-            message: '말하기 속도가 빠릅니다. 조금 천천히 말해보세요.',
+            message: '천천히 말해보세요',
             visualCue: 'speed_warning',
             trigger: {
                 type: 'analysis_result',
@@ -211,9 +211,9 @@ const decideFeedback = (context, userSettings) => {
             }
         },
         interest_level: {
-            patternId: context.interest_level > 0.7 ? 'R1' : 'R2',
+            patternId: context.interest_level > 0.7 ? 'C1' : 'C2',
             priority: 'medium',
-            message: context.interest_level > 0.7 ? '상대방이 관심을 보입니다.' : '상대방의 관심도가 낮아지고 있습니다.',
+            message: context.interest_level > 0.7 ? '훌륭한 발표 자신감이에요!' : '더 자신감 있게 발표하세요!',
             visualCue: context.interest_level > 0.7 ? 'interest_high' : 'interest_low',
             trigger: {
                 type: 'analysis_result',
@@ -222,9 +222,9 @@ const decideFeedback = (context, userSettings) => {
             }
         },
         silence: {
-            patternId: 'F2',
+            patternId: 'F1',
             priority: 'high',
-            message: '침묵이 길어지고 있습니다. 새로운 주제를 시작해보세요.',
+            message: '"음", "어" 등을 줄여보세요',
             visualCue: 'silence_warning',
             trigger: {
                 type: 'analysis_result',
@@ -362,12 +362,14 @@ const processSTTAnalysisAndGenerateFeedback = async (params) => {
 
         // 2. 피드백 생성 전 이전 피드백과의 간격 확인
         const shouldSendFeedback = await checkFeedbackInterval(userId, userSettings.minimum_interval_seconds);
+        logger.info(`피드백 간격 체크 결과: ${userId}`, { shouldSendFeedback, minInterval: userSettings.minimum_interval_seconds });
         if (!shouldSendFeedback) {
-            logger.debug(`피드백 생성 스킵 - 최소 간격 미충족: ${userId}`);
+            logger.info(`피드백 생성 스킵 - 최소 간격 미충족: ${userId}`);
             return null;
         }
 
         // 3. STT 분석 결과 기반 피드백 결정 (8개 MVP 패턴 활용)
+        logger.info(`STT 분석 기반 피드백 결정 시작: ${userId}`, { wpm: speechMetrics?.evaluationWpm, scenario });
         const feedbackDecision = decideFeedbackFromSTTAnalysis({
             text,
             speechMetrics,
@@ -377,8 +379,9 @@ const processSTTAnalysisAndGenerateFeedback = async (params) => {
             userSettings
         });
 
+        logger.info(`피드백 결정 결과: ${userId}`, { decision: feedbackDecision ? feedbackDecision.type : null });
         if (!feedbackDecision) {
-            logger.debug(`피드백 생성 스킵 - 적절한 피드백 없음: ${userId}`);
+            logger.info(`피드백 생성 스킵 - 적절한 피드백 없음: ${userId}`);
             return null;
         }
 
@@ -459,255 +462,533 @@ const processSTTAnalysisAndGenerateFeedback = async (params) => {
 };
 
 /**
- * STT 분석 결과 기반 피드백 결정 (8개 MVP 패턴)
+ * STT 응답에서 confidence 점수 계산 - 리포트 서비스와 동일한 로직
+ */
+const calculateConfidenceFromSTT = (speechMetrics, text, words) => {
+    if (!speechMetrics) {
+        return 0.6; // 기본값
+    }
+
+    let totalScore = 0;
+    let factorCount = 0;
+
+    // 1. 말하기 속도 안정성 (30%) - 한국어 기준 개선
+    if (speechMetrics.evaluation_wpm) {
+        const wpm = speechMetrics.evaluation_wpm;
+        // 한국어 적절한 속도: 100-180 WPM (기존 80-150에서 확장)
+        let speedScore = 1.0;
+        if (wpm < 100) {
+            speedScore = Math.max(0.4, wpm / 100); // 너무 느리면 불안감
+        } else if (wpm > 180) {
+            speedScore = Math.max(0.3, 1 - (wpm - 180) / 120); // 너무 빠르면 초조함
+        }
+        totalScore += speedScore * 0.3;
+        factorCount += 0.3;
+    }
+
+    // 2. 단어 확신도 (25%) - 음성 인식 정확도
+    if (words && Array.isArray(words) && words.length > 0) {
+        const probabilities = words
+            .map(w => w.probability)
+            .filter(p => typeof p === 'number' && p >= 0 && p <= 1);
+
+        if (probabilities.length > 0) {
+            const avgProbability = probabilities.reduce((sum, p) => sum + p, 0) / probabilities.length;
+            totalScore += avgProbability * 0.25;
+            factorCount += 0.25;
+        }
+    }
+
+    // 3. 멈춤 패턴 (20%) - 자연스러운 호흡과 사고
+    if (speechMetrics.pause_metrics) {
+        const pauseRatio = speechMetrics.pause_metrics.pause_ratio || 0;
+        // 적절한 멈춤(0.1-0.25)일 때 높은 점수 (기존보다 범위 확장)
+        const pauseScore = pauseRatio >= 0.1 && pauseRatio <= 0.25 ? 1.0 : 
+            Math.max(0, 1 - Math.abs(pauseRatio - 0.175) * 4);
+        totalScore += pauseScore * 0.2;
+        factorCount += 0.2;
+    }
+
+    // 4. 음성 패턴 정상성 (15%)
+    if (speechMetrics.speech_pattern) {
+        const patternScore = speechMetrics.speech_pattern === 'normal' ? 1.0 : 
+                           speechMetrics.speech_pattern === 'steady' ? 0.9 : 0.6;
+        totalScore += patternScore * 0.15;
+        factorCount += 0.15;
+    }
+
+    // 5. 발화 연속성 (10%)
+    if (speechMetrics.speed_category) {
+        const categoryScore = speechMetrics.speed_category === 'normal' ? 1.0 : 
+                            speechMetrics.speed_category === 'steady' ? 0.9 : 0.7;
+        totalScore += categoryScore * 0.1;
+        factorCount += 0.1;
+    }
+
+    // 가중평균 계산
+    const confidenceScore = factorCount > 0 ? totalScore / factorCount : 0.6;
+    return Math.max(0.2, Math.min(1.0, confidenceScore));
+};
+
+/**
+ * 설득력 계산 - 새로 추가된 타당한 계산법
+ */
+const calculatePersuasionFromSTT = (speechMetrics, text, words) => {
+    if (!speechMetrics || !text) {
+        return 0.65; // 기본값
+    }
+
+    let totalScore = 0;
+    let factorCount = 0;
+
+    // 1. 논리적 구조 키워드 (35%)
+    const structureWords = ['첫째', '둘째', '셋째', '마지막으로', '결론적으로', '요약하면', '핵심은', '중요한'];
+    const structureCount = structureWords.reduce((count, word) => {
+        const regex = new RegExp(word, 'g');
+        const matches = text.match(regex);
+        return count + (matches ? matches.length : 0);
+    }, 0);
+    const structureScore = Math.min(1.0, structureCount / 3); // 3개 이상이면 만점
+    totalScore += structureScore * 0.35;
+    factorCount += 0.35;
+
+    // 2. 설득 키워드 (30%)
+    const persuasionWords = ['장점', '이익', '효과', '결과', '성과', '가치', '개선', '해결', '도움'];
+    const persuasionCount = persuasionWords.reduce((count, word) => {
+        const regex = new RegExp(word, 'g');
+        const matches = text.match(regex);
+        return count + (matches ? matches.length : 0);
+    }, 0);
+    const persuasionKeywordScore = Math.min(1.0, persuasionCount / 4); // 4개 이상이면 만점
+    totalScore += persuasionKeywordScore * 0.3;
+    factorCount += 0.3;
+
+    // 3. 말하기 일관성 (20%) - 설득력은 일관된 전달이 중요
+    if (speechMetrics.wpm_cv) {
+        const consistencyScore = Math.max(0, 1 - speechMetrics.wpm_cv); // 변동계수가 낮을수록 좋음
+        totalScore += consistencyScore * 0.2;
+        factorCount += 0.2;
+    }
+
+    // 4. 적절한 발화 속도 (15%) - 설득력에는 안정적인 속도가 중요
+    if (speechMetrics.evaluation_wpm) {
+        const wpm = speechMetrics.evaluation_wpm;
+        const speedScore = wpm >= 110 && wpm <= 160 ? 1.0 : // 설득에 적합한 속도
+                         wpm >= 90 && wpm <= 180 ? 0.8 : 0.6;
+        totalScore += speedScore * 0.15;
+        factorCount += 0.15;
+    }
+
+    // 가중평균 계산
+    const persuasionScore = factorCount > 0 ? totalScore / factorCount : 0.65;
+    return Math.max(0.3, Math.min(1.0, persuasionScore));
+};
+
+/**
+ * 명확성 계산 - 새로 추가된 타당한 계산법
+ */
+const calculateClarityFromSTT = (speechMetrics, text, words) => {
+    if (!speechMetrics || !text) {
+        return 0.7; // 기본값
+    }
+
+    let totalScore = 0;
+    let factorCount = 0;
+
+    // 1. 단어 확신도 (30%) - 명확한 발음일수록 인식률 높음
+    if (words && Array.isArray(words) && words.length > 0) {
+        const probabilities = words
+            .map(w => w.probability)
+            .filter(p => typeof p === 'number' && p >= 0 && p <= 1);
+
+        if (probabilities.length > 0) {
+            const avgProbability = probabilities.reduce((sum, p) => sum + p, 0) / probabilities.length;
+            totalScore += avgProbability * 0.3;
+            factorCount += 0.3;
+        }
+    }
+
+    // 2. 멈춤의 적절성 (25%) - 명확성에는 적절한 휴지가 중요
+    if (speechMetrics.pause_metrics) {
+        const pauseRatio = speechMetrics.pause_metrics.pause_ratio || 0;
+        const avgPauseDuration = speechMetrics.pause_metrics.average_duration || 0;
+        
+        // 적절한 멈춤 비율 (0.1-0.2)과 적절한 길이 (0.3-1.0초)
+        const ratioScore = pauseRatio >= 0.1 && pauseRatio <= 0.2 ? 1.0 : 
+                          Math.max(0, 1 - Math.abs(pauseRatio - 0.15) * 5);
+        const durationScore = avgPauseDuration >= 0.3 && avgPauseDuration <= 1.0 ? 1.0 :
+                             Math.max(0, 1 - Math.abs(avgPauseDuration - 0.65) * 2);
+        
+        const pauseScore = (ratioScore + durationScore) / 2;
+        totalScore += pauseScore * 0.25;
+        factorCount += 0.25;
+    }
+
+    // 3. 말하기 속도 (20%) - 명확성에는 적당한 속도가 중요
+    if (speechMetrics.evaluation_wpm) {
+        const wpm = speechMetrics.evaluation_wpm;
+        // 명확성에 최적인 속도: 100-150 WPM
+        const speedScore = wpm >= 100 && wpm <= 150 ? 1.0 :
+                         wpm >= 80 && wpm <= 170 ? 0.8 : 0.6;
+        totalScore += speedScore * 0.2;
+        factorCount += 0.2;
+    }
+
+    // 4. 필러워드 비율 (15%) - 명확성에는 필러워드가 적어야 함
+    if (text) {
+        const fillerWords = ['음', '어', '아', '그', '뭐', '좀'];
+        const textWords = text.split(/\s+/).filter(word => word.length > 0);
+        let fillerCount = 0;
+        
+        fillerWords.forEach(filler => {
+            const regex = new RegExp(filler, 'g');
+            const matches = text.match(regex);
+            if (matches) fillerCount += matches.length;
+        });
+        
+        const fillerRatio = textWords.length > 0 ? fillerCount / textWords.length : 0;
+        const fillerScore = Math.max(0, 1 - fillerRatio * 5); // 필러워드가 적을수록 좋음
+        totalScore += fillerScore * 0.15;
+        factorCount += 0.15;
+    }
+
+    // 5. 음성 패턴 (10%)
+    if (speechMetrics.speech_pattern) {
+        const patternScore = speechMetrics.speech_pattern === 'normal' ? 1.0 : 
+                           speechMetrics.speech_pattern === 'steady' ? 0.9 : 0.6;
+        totalScore += patternScore * 0.1;
+        factorCount += 0.1;
+    }
+
+    // 가중평균 계산
+    const clarityScore = factorCount > 0 ? totalScore / factorCount : 0.7;
+    return Math.max(0.3, Math.min(1.0, clarityScore));
+};
+
+/**
+ * words 배열의 probability 평균으로 별도 confidence 계산
+ */
+const calculateConfidenceFromWords = (words) => {
+    if (!words || !Array.isArray(words) || words.length === 0) {
+        return 0.6; // 기본값
+    }
+
+    const probabilities = words
+        .map(w => w.probability)
+        .filter(p => typeof p === 'number' && p >= 0 && p <= 1);
+
+    if (probabilities.length === 0) {
+        return 0.6;
+    }
+
+    const averageProbability = probabilities.reduce((sum, p) => sum + p, 0) / probabilities.length;
+    return Math.max(0, Math.min(1, averageProbability));
+};
+
+/**
+ * STT 분석 결과를 기반으로 피드백 결정 (새로운 패턴 시스템)
  */
 const decideFeedbackFromSTTAnalysis = ({ text, speechMetrics, emotionAnalysis, scenario, language, userSettings }) => {
     try {
-        logger.debug('피드백 결정 분석 시작:', {
-            wpm: speechMetrics?.evaluationWpm,
+        // 디버깅: 전달받은 데이터 전체 확인
+        logger.info('⚡ 함수 호출 매개변수 확인:', {
+            hasText: !!text,
+            textLength: text?.length,
+            hasSpeechMetrics: !!speechMetrics,
+            speechMetrics: speechMetrics,
+            hasEmotionAnalysis: !!emotionAnalysis,
+            scenario,
+            language
+        });
+
+        // 통합된 3개 지표 계산 (STT 응답 기반)
+        const calculatedConfidence = calculateConfidenceFromSTT(speechMetrics, text, speechMetrics?.words);
+        const calculatedPersuasion = calculatePersuasionFromSTT(speechMetrics, text, speechMetrics?.words);
+        const calculatedClarity = calculateClarityFromSTT(speechMetrics, text, speechMetrics?.words);
+        
+        // 최종 자신감은 기존 로직 유지 (words confidence 조합)
+        const wordsConfidence = calculateConfidenceFromWords(speechMetrics?.words);
+        const finalConfidence = (calculatedConfidence * 0.7 + wordsConfidence * 0.3); // 가중평균
+
+        logger.info('피드백 결정 분석 시작 (3개 지표):', {
+            wpm: speechMetrics?.evaluation_wpm,
+            confidence: Math.round(finalConfidence * 100),
+            persuasion: Math.round(calculatedPersuasion * 100),
+            clarity: Math.round(calculatedClarity * 100),
             emotion: emotionAnalysis?.primaryEmotion?.emotionKr,
-            probability: emotionAnalysis?.primaryEmotion?.probability,
             scenario,
             textLength: text?.length
         });
 
-        // 🎯 S1: 말하기 속도 기반 피드백 (조건 완화)
-        if (speechMetrics?.evaluationWpm) {
-            const wpm = speechMetrics.evaluationWpm;
-            
-            // 조건 완화: 130 이상이면 빠름 (기존 150)
+        // 🚀 D1: 말하기 속도 피드백 (빠른 속도 130 WPM 이상)
+        if (speechMetrics?.evaluation_wpm) {
+            const wpm = speechMetrics.evaluation_wpm;
+            logger.info('말하기 속도 분석:', { wpm, threshold: 130 });
+
             if (wpm > 130) {
-                logger.info('속도 빠름 피드백 생성', { wpm, threshold: 130 });
+                logger.info('⚡ D1 패턴: 빠른 말하기 속도 피드백 생성', { wpm, threshold: 130 });
                 return {
-                    type: 'speaking_pace_fast',
+                    type: 'D1_speed_fast',
                     priority: 'high',
-                    message: '말하는 속도가 너무 빠릅니다. 조금 천천히 말해보세요.',
+                    message: '🐌 천천히 말해보세요',
                     visualCue: {
-                        color: '#FF6B6B',
+                        color: '#FF9800',
                         icon: 'speed_down',
-                        text: '천천히'
+                        text: '속도 조절'
                     },
                     trigger: {
                         type: 'speech_analysis',
-                        value: 'wpm_too_fast',
-                        confidence: Math.min((wpm - 130) / 50, 1.0),
-                        data: { currentWpm: wpm, threshold: 130 }
-                    }
-                };
-            } 
-            // 조건 완화: 60 미만이면 느림 (기존 80)
-            else if (wpm < 60) {
-                logger.info('속도 느림 피드백 생성', { wpm, threshold: 60 });
-                return {
-                    type: 'speaking_pace_slow',
-                    priority: 'medium',
-                    message: '말하는 속도가 느립니다. 조금 더 활발하게 말해보세요.',
-                    visualCue: {
-                        color: '#FFD93D',
-                        icon: 'speed_up',
-                        text: '조금 더 빠르게'
-                    },
-                    trigger: {
-                        type: 'speech_analysis',
-                        value: 'wpm_too_slow',
-                        confidence: Math.min((60 - wpm) / 30, 1.0),
-                        data: { currentWpm: wpm, threshold: 60 }
+                        value: 'speaking_pace_too_fast',
+                        confidence: Math.min(1.0, (wpm - 130) / 70),
+                        data: { wpm, threshold: 130, scenario, pattern: 'D1' }
                     }
                 };
             }
-            // 정상 범위에서도 가끔 피드백 생성 (테스트용)
-            else if (wpm > 100) {
-                logger.info('정상 속도 격려 피드백 생성', { wpm });
-                return {
-                    type: 'speaking_pace_good',
-                    priority: 'low',
-                    message: '적절한 속도로 말하고 있습니다. 계속 유지하세요!',
-                    visualCue: {
-                        color: '#4CAF50',
-                        icon: 'check_circle',
-                        text: '좋아요!'
-                    },
-                    trigger: {
-                        type: 'speech_analysis',
-                        value: 'wpm_good',
-                        confidence: 0.8,
-                        data: { currentWpm: wpm }
-                    }
-                };
-            }
+        } else {
+            logger.warn('⚠️ speechMetrics.evaluation_wpm이 없음:', { speechMetrics });
         }
 
-        // 🎯 R1 & R2: 감정 분석 기반 피드백 (조건 완화)
-        if (emotionAnalysis?.primaryEmotion) {
-            const emotion = emotionAnalysis.primaryEmotion.emotionKr;
-            const probability = emotionAnalysis.primaryEmotion.probability;
-
-            logger.debug('감정 분석 확인:', { emotion, probability, scenario });
-
-            // 면접 시나리오에서 긴장/불안 → L1 (조건 완화: 0.5로 낮춤)
-            if (scenario === 'interview' && (emotion === '불안' || emotion === '긴장') && probability > 0.5) {
-                logger.info('불안 감정 피드백 생성', { emotion, probability });
-                return {
-                    type: 'emotion_anxiety',
-                    priority: 'medium',
-                    message: '긴장을 풀고 자신감 있게 말해보세요.',
-                    visualCue: {
-                        color: '#4ECDC4',
-                        icon: 'relax',
-                        text: '진정하기'
-                    },
-                    trigger: {
-                        type: 'emotion_analysis',
-                        value: 'anxiety_high',
-                        confidence: probability,
-                        data: { emotion, probability: Math.round(probability * 100), scenario }
-                    }
-                };
+        // 💼 C1: 높은 확신도 피드백 (0.8 이상) 또는 설득력/명확성 우수
+        const hasExcellentPerformance = finalConfidence > 0.8 ||
+                                      (scenario === 'presentation' && (calculatedPersuasion > 0.8 || calculatedClarity > 0.8)) ||
+                                      (scenario === 'interview' && calculatedClarity > 0.8);
+                                      
+        if (hasExcellentPerformance) {
+            let messages = [];
+            let achievement = '';
+            
+            // 가장 높은 지표를 기준으로 메시지 결정
+            if (finalConfidence > 0.8) {
+                achievement = 'confidence_excellent';
+                messages = scenario === 'interview' 
+                    ? ['💼 확신감 있는 답변이에요!', '✨ 자신감이 느껴져요!', '🎯 명확한 답변이네요!']
+                    : scenario === 'presentation'
+                    ? ['🚀 훌륭한 발표 자신감이에요!', '💪 당당한 발표네요!', '⭐ 확신에 찬 발표예요!']
+                    : ['💯 자신감 넘치는 말투예요!', '🌟 확신감이 느껴져요!'];
+            } else if (scenario === 'presentation' && calculatedPersuasion > 0.8) {
+                achievement = 'persuasion_excellent';
+                messages = ['🏆 매우 설득력 있는 발표예요!', '💎 탁월한 논리적 구성이네요!', '🎯 강력한 메시지 전달!'];
+            } else if (calculatedClarity > 0.8) {
+                achievement = 'clarity_excellent';
+                messages = scenario === 'presentation' 
+                    ? ['🔍 매우 명확한 발표예요!', '📝 완벽한 구조화!', '💡 이해하기 쉬운 설명!']
+                    : ['🔍 매우 명확한 답변이에요!', '📝 잘 정리된 설명!', '💡 이해하기 쉬워요!'];
             }
-
-            // 소개팅/일반 대화에서 무감정/지루함 → R2 (조건 완화: 0.4로 낮춤)
-            if ((scenario === 'dating' || scenario === 'general') && 
-                (emotion === '무감정' || emotion === '지루함') && probability > 0.4) {
-                logger.info('무감정 피드백 생성', { emotion, probability });
-                return {
-                    type: 'emotion_lack_enthusiasm',
-                    priority: 'high',
-                    message: '좀 더 생기있게 대화해보세요.',
-                    visualCue: {
-                        color: '#FF6B9D',
-                        icon: 'smile',
-                        text: '활기차게'
-                    },
-                    trigger: {
-                        type: 'emotion_analysis',
-                        value: 'enthusiasm_low',
-                        confidence: probability,
-                        data: { emotion, probability: Math.round(probability * 100), scenario }
-                    }
-                };
-            }
-
-            // 긍정적 감정 → R1 (조건 완화: 0.5로 낮춤)
-            if ((emotion === '기쁨' || emotion === '행복' || emotion === '만족') && probability > 0.5) {
-                logger.info('긍정 감정 피드백 생성', { emotion, probability });
-                return {
-                    type: 'emotion_positive',
-                    priority: 'low',
-                    message: '좋습니다! 긍정적인 분위기를 유지하세요.',
-                    visualCue: {
-                        color: '#4CAF50',
-                        icon: 'favorite',
-                        text: '좋아요!'
-                    },
-                    trigger: {
-                        type: 'emotion_analysis',
-                        value: 'positive_emotion',
-                        confidence: probability,
-                        data: { emotion, probability: Math.round(probability * 100) }
-                    }
-                };
-            }
-
-            // 기타 감정에도 피드백 제공 (테스트용)
-            if (probability > 0.6) {
-                logger.info('일반 감정 피드백 생성', { emotion, probability });
-                return {
-                    type: 'emotion_general',
-                    priority: 'low',
-                    message: `${emotion} 감정이 감지되었습니다. 대화 상황에 맞게 조절해보세요.`,
-                    visualCue: {
-                        color: '#9C27B0',
-                        icon: 'mood',
-                        text: '감정 인식'
-                    },
-                    trigger: {
-                        type: 'emotion_analysis',
-                        value: 'emotion_detected',
-                        confidence: probability,
-                        data: { emotion, probability: Math.round(probability * 100) }
-                    }
-                };
-            }
-        }
-
-        // 🎯 F1: 일시정지가 많은 경우 (조건 완화: 3회 이상, 평균 1초 이상)
-        if (speechMetrics?.pauseMetrics?.count > 3 && speechMetrics?.pauseMetrics?.averageDuration > 1.0) {
-            logger.info('일시정지 피드백 생성', speechMetrics.pauseMetrics);
+                
+            logger.info('💼 C1 패턴: 우수 성과 피드백 생성', { 
+                finalConfidence: Math.round(finalConfidence * 100), 
+                persuasion: Math.round(calculatedPersuasion * 100),
+                clarity: Math.round(calculatedClarity * 100),
+                achievement, 
+                scenario 
+            });
+            
             return {
-                type: 'speech_flow_pauses',
-                priority: 'medium',
-                message: '말하기가 끊어지고 있어요. 새로운 주제로 자연스럽게 넘어가보세요.',
-                visualCue: {
-                    color: '#45B7D1',
-                    icon: 'change_circle',
-                    text: '주제 전환'
-                },
-                trigger: {
-                    type: 'speech_analysis',
-                    value: 'too_many_pauses',
-                    confidence: Math.min(speechMetrics.pauseMetrics.count / 10, 1.0),
-                    data: { 
-                        pauseCount: speechMetrics.pauseMetrics.count,
-                        avgPauseDuration: speechMetrics.pauseMetrics.averageDuration.toFixed(1)
-                    }
-                }
-            };
-        }
-
-        // 텍스트 길이 기반 피드백 (새로 추가)
-        if (text && text.length > 50) {
-            logger.info('텍스트 길이 기반 피드백 생성', { textLength: text.length });
-            return {
-                type: 'text_engagement',
+                type: 'C1_confidence_high',
                 priority: 'low',
-                message: '적극적으로 대화에 참여하고 있어요. 계속 유지하세요!',
+                message: messages[Math.floor(Math.random() * messages.length)],
                 visualCue: {
                     color: '#4CAF50',
-                    icon: 'chat',
-                    text: '대화 활발'
+                    icon: 'trending_up',
+                    text: achievement === 'confidence_excellent' ? '자신감 우수' : 
+                          achievement === 'persuasion_excellent' ? '설득력 우수' : '명확성 우수'
                 },
                 trigger: {
-                    type: 'text_analysis',
-                    value: 'active_participation',
-                    confidence: Math.min(text.length / 100, 1.0),
-                    data: { textLength: text.length }
+                    type: 'excellence_analysis',
+                    value: achievement,
+                    confidence: finalConfidence,
+                    data: { 
+                        confidenceLevel: Math.round(finalConfidence * 100),
+                        persuasionLevel: Math.round(calculatedPersuasion * 100),
+                        clarityLevel: Math.round(calculatedClarity * 100),
+                        primaryStrength: achievement,
+                        calculatedFrom: 'stt_comprehensive_metrics',
+                        scenario,
+                        pattern: 'C1'
+                    }
                 }
             };
         }
 
-        // 특별한 피드백이 필요하지 않은 경우
-        logger.debug('피드백 생성 조건 미충족');
-        return null;
+        // 💪 C2: 낮은 확신도 피드백 (0.4 미만) 또는 설득력/명확성 부족
+        const needsC2Feedback = finalConfidence < 0.4 || 
+                               (scenario === 'presentation' && (calculatedPersuasion < 0.4 || calculatedClarity < 0.4)) ||
+                               (scenario === 'interview' && calculatedClarity < 0.4);
+                               
+        if (needsC2Feedback) {
+            let messages = [];
+            let reason = '';
+            
+            // 가장 낮은 지표를 기준으로 메시지 결정
+            if (finalConfidence < 0.4) {
+                reason = 'confidence_low';
+                messages = scenario === 'interview'
+                    ? ['💪 더 자신감 있게 답변하세요!', '🔥 당당하게 말해보세요!', '✊ 확신을 가지세요!']
+                    : scenario === 'presentation'
+                    ? ['💪 더 자신감 있게 발표하세요!', '🎯 당당한 자세로!', '⚡ 확신감을 보여주세요!']
+                    : ['💪 더 자신감 있게 말해보세요!', '🌟 당당하게 표현하세요!'];
+            } else if (scenario === 'presentation' && calculatedPersuasion < 0.4) {
+                reason = 'persuasion_low';
+                messages = ['📢 더 설득력 있게 발표하세요!', '🎯 핵심 장점을 강조해보세요!', '💎 가치를 더 어필하세요!'];
+            } else if (calculatedClarity < 0.4) {
+                reason = 'clarity_low';
+                messages = scenario === 'presentation' 
+                    ? ['🎤 더 명확하게 발표하세요!', '📝 핵심 포인트를 정리해보세요!', '🔍 구조화해서 말해보세요!']
+                    : ['🎤 더 명확하게 답변하세요!', '📝 요점을 정리해서 말해보세요!', '🔍 차근차근 설명해보세요!'];
+            }
+                
+            logger.info('💪 C2 패턴: 자신감/설득력/명확성 개선 피드백 생성', { 
+                finalConfidence: Math.round(finalConfidence * 100), 
+                persuasion: Math.round(calculatedPersuasion * 100),
+                clarity: Math.round(calculatedClarity * 100),
+                reason, 
+                scenario 
+            });
+            
+            return {
+                type: 'C2_confidence_low',
+                priority: 'high',
+                message: messages[Math.floor(Math.random() * messages.length)],
+                visualCue: {
+                    color: '#FF9800',
+                    icon: 'trending_down',
+                    text: reason === 'confidence_low' ? '자신감 필요' : 
+                          reason === 'persuasion_low' ? '설득력 개선' : '명확성 개선'
+                },
+                trigger: {
+                    type: 'comprehensive_analysis',
+                    value: reason,
+                    confidence: finalConfidence,
+                    data: { 
+                        confidenceLevel: Math.round(finalConfidence * 100),
+                        persuasionLevel: Math.round(calculatedPersuasion * 100),
+                        clarityLevel: Math.round(calculatedClarity * 100),
+                        primaryIssue: reason,
+                        calculatedFrom: 'stt_comprehensive_metrics',
+                        scenario,
+                        pattern: 'C2'
+                    }
+                }
+            };
+        }
 
+        // 🎯 F1: 채움어 감지 피드백 (15% 이상)
+        if (text) {
+            const fillerWords = ['음', '어', '아', '그', '뭐', '좀', '그런', '이제', '근데', '그니까'];
+            const textWords = text.split(/\s+/).filter(word => word.length > 0);
+            let fillerCount = 0;
+            
+            fillerWords.forEach(filler => {
+                const regex = new RegExp(filler, 'g');
+                const matches = text.match(regex);
+                if (matches) fillerCount += matches.length;
+            });
+            
+            const wordsCount = textWords.length;
+            const fillerRatio = wordsCount > 0 ? fillerCount / wordsCount : 0;
+
+            logger.info('채움어 분석:', { 
+                fillerCount, 
+                wordsCount, 
+                fillerRatio: Math.round(fillerRatio * 100) + '%',
+                threshold: '15%'
+            });
+
+            // 채움어 비율이 15% 이상인 경우
+            if (fillerRatio > 0.15 && fillerCount >= 2) {
+                logger.info('🎯 F1 패턴: 채움어 피드백 생성', { 
+                    fillerCount, 
+                    fillerRatio: Math.round(fillerRatio * 100), 
+                    wordsCount 
+                });
+                return {
+                    type: 'F1_filler_words',
+                    priority: 'medium',
+                    message: '🎯 "음", "어" 줄여보세요',
+                    visualCue: {
+                        color: '#9C27B0',
+                        icon: 'voice_chat',
+                        text: '말하기 개선'
+                    },
+                    trigger: {
+                        type: 'filler_analysis',
+                        value: 'filler_words_high',
+                        confidence: Math.min(1.0, fillerRatio * 2),
+                        data: { 
+                            fillerCount, 
+                            fillerRatio: Math.round(fillerRatio * 100),
+                            wordsCount,
+                            scenario,
+                            pattern: 'F1'
+                        }
+                    }
+                };
+            }
+        }
+
+        // 어떤 패턴도 해당되지 않는 경우
+        logger.info('📊 분석 완료 - 피드백 필요 없음', {
+            wpm: speechMetrics?.evaluation_wpm,
+            confidence: Math.round((finalConfidence || 0) * 100),
+            persuasion: Math.round((calculatedPersuasion || 0) * 100),
+            clarity: Math.round((calculatedClarity || 0) * 100),
+            scenario,
+            reason: 'no_pattern_matched',
+            thresholds: {
+                speedThreshold: 130,
+                confidenceHigh: 80,
+                confidenceLow: 40,
+                fillerThreshold: 15
+            }
+        });
+
+        return null; // 피드백 없음
     } catch (error) {
-        logger.error(`STT 분석 기반 피드백 결정 오류: ${error.message}`);
+        logger.error('피드백 결정 중 오류 발생:', error);
         return null;
     }
 };
 
 /**
- * 8개 MVP 햅틱 패턴 매핑 테이블
+ * 피드백 타입과 햅틱 패턴 ID 매핑
  */
 const getHapticPatternMapping = () => {
     return {
-        // 말하기 속도 관련
-        'speaking_pace_fast': 'S1',       // 속도 조절 패턴
-        'speaking_pace_slow': 'S1',       // 속도 조절 패턴 (같은 패턴, 메시지만 다름)
+        // === 새로운 프론트엔드 동기화 패턴 (D1, C1, C2, F1) ===
+        'D1_speed_fast': 'D1',            // 속도 조절 패턴 (빠름)
+        'C1_confidence_high': 'C1',       // 자신감 상승 패턴
+        'C2_confidence_low': 'C2',        // 자신감 하락 패턴
+        'F1_filler_words': 'F1',          // 채움어 감지 패턴
         
-        // 감정/반응 관련
-        'emotion_anxiety': 'L1',          // 경청 강화 패턴 (긴장 완화 효과)
-        'emotion_lack_enthusiasm': 'R2',  // 관심도 하락 패턴 (경고)
-        'emotion_positive': 'R1',         // 호감도 상승 패턴 (긍정 강화)
+        // === 직접 패턴 매핑 (하위 호환성) ===
+        'D1': 'D1',       // 속도 조절 패턴 (빠름)
+        'C1': 'C1',       // 자신감 상승 패턴
+        'C2': 'C2',       // 자신감 하락 패턴
+        'F1': 'F1',       // 채움어 감지 패턴
+        
+        // === 기존 패턴 (하위 호환성 유지) ===
+        // 말하기 속도 관련
+        'speaking_pace': 'D1',            // 통합된 속도 조절 패턴
+        'speaking_pace_fast': 'D1',       // 빠른 속도
+        'speaking_pace_slow': 'D1',       // 느린 속도
+        
+        // 감정/반응 관련  
+        'emotion_anxiety': 'C2',          // 긴장/불안 → 자신감 하락으로 매핑
+        'emotion_lack_enthusiasm': 'C2',  // 무감정/지루함 → 자신감 하락으로 매핑
+        'emotion_positive': 'C1',         // 긍정적 감정 → 자신감 상승으로 매핑
+        'confidence_up': 'C1',            // 기존 자신감 상승 패턴
+        'confidence_down': 'C2',          // 기존 자신감 하락 패턴
         
         // 대화 흐름 관련
-        'speech_flow_pauses': 'F1',       // 주제 전환 패턴
-        'silence_management': 'F2',       // 침묵 관리 패턴
+        'speech_flow_pauses': 'F1',       // 일시정지 많음 → 채움어로 재분류
+        'filler_words': 'F1',             // 기존 채움어 패턴
+        'silence_management': 'F3',       // 침묵 관리 패턴 (기존 유지)
         
-        // 청자 행동 관련
+        // 청자 행동 관련 (기존 패턴 유지)
         'listening_enhancement': 'L1',    // 경청 강화 패턴
         'question_suggestion': 'L3',      // 질문 제안 패턴
         
-        // 음량 관련
+        // 음량 관련 (기존 패턴 유지)
         'volume_control': 'S2'            // 음량 조절 패턴
     };
 };
@@ -719,6 +1000,41 @@ const constructHapticData = (patternId, intensity) => {
     const baseIntensity = Math.max(1, Math.min(10, intensity)); // 1-10 범위로 제한
     
     const patternConfigs = {
+        // === 새로운 프론트엔드 동기화 패턴 ===
+        'D1': { // 속도 조절 - 3회 강한 진동 (빠름/느림)
+            pattern: 'speed_control',
+            intensity: baseIntensity,
+            duration_ms: 3500, // 3.5초
+            vibration_count: 3,
+            interval_ms: 800,
+            description: '3회 강한 진동 (속도 조절)'
+        },
+        'C1': { // 자신감 상승 - 상승하는 파동
+            pattern: 'confidence_up',
+            intensity: baseIntensity,
+            duration_ms: 3000, // 3초
+            vibration_count: 4,
+            interval_ms: 600,
+            description: '상승하는 파동 (자신감 증진)'
+        },
+        'C2': { // 자신감 하락 - 하강하는 파동
+            pattern: 'confidence_down',
+            intensity: Math.max(1, baseIntensity - 1), // 약간 부드럽게
+            duration_ms: 2500, // 2.5초
+            vibration_count: 3,
+            interval_ms: 700,
+            description: '하강하는 파동 (자신감 회복 필요)'
+        },
+        'F1': { // 채움어 - 2회 짧은 탭
+            pattern: 'filler_words',
+            intensity: baseIntensity,
+            duration_ms: 2000, // 2초
+            vibration_count: 2,
+            interval_ms: 500,
+            description: '2회 짧은 탭 (채움어 줄이기)'
+        },
+        
+        // === 기존 패턴 (하위 호환성 유지) ===
         'S1': { // 속도 조절 - 3회 강한 진동
             pattern: 'speed_control',
             intensity: baseIntensity,
@@ -735,7 +1051,7 @@ const constructHapticData = (patternId, intensity) => {
             interval_ms: 1000,
             description: '약함→중간→강함 (트리플탭 추가)'
         },
-        'F1': { // 주제 전환 - 2회 긴 진동
+        'F2': { // 주제 전환 - 2회 긴 진동
             pattern: 'topic_change',
             intensity: baseIntensity,
             duration_ms: 3000, // 3초
@@ -751,7 +1067,7 @@ const constructHapticData = (patternId, intensity) => {
             interval_ms: 700,
             description: '4회 상승 파동 (행복감 폭발)'
         },
-        'F2': { // 침묵 관리 - 부드러운 2회 탭
+        'F3': { // 침묵 관리 - 부드러운 2회 탭
             pattern: 'silence_management',
             intensity: Math.max(1, baseIntensity - 2), // 더 부드럽게
             duration_ms: 2500, // 2.5초

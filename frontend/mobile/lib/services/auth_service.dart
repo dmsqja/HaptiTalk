@@ -33,6 +33,9 @@ class AuthService {
   String? _accessToken;
   String? _refreshToken;
 
+  // API 서비스 인스턴스 getter 추가
+  ApiService get apiService => _apiService;
+
   // 프로필 조회 재시도 횟수
   static const int _maxProfileFetchRetries = 2;
 
@@ -78,7 +81,14 @@ class AuthService {
         });
         print('🔄 API 서비스 헤더 업데이트 (로그인 시): Bearer ${_accessToken?.substring(0, 10)}... ');
 
-        // 사용자 정보 조회
+        // 로그인 응답에서 기본 사용자 정보 저장 (이메일 포함)
+        if (data['user'] != null) {
+          final loginUserData = data['user'];
+          _currentUser = UserModel.fromJson(loginUserData);
+          print('🔄 로그인 응답에서 기본 사용자 정보 저장: ${_currentUser?.name} (${_currentUser?.email})');
+        }
+
+        // 사용자 정보 조회 (프로필 정보로 보완)
         await _fetchUserProfile(retryCount: 0);
         
         if (_currentUser != null && _currentUser!.id != 'unknown') {
@@ -192,7 +202,22 @@ class AuthService {
       final response = await _apiService.get('/users/profile');
       
       if (response['success'] == true && response['data'] != null) {
-        _currentUser = UserModel.fromJson(response['data']);
+        // 기존 사용자 정보가 있다면 이메일 등 기본 정보를 보존
+        String? existingEmail = _currentUser?.email;
+        String? existingId = _currentUser?.id;
+        
+        // 프로필 정보로 사용자 모델 생성
+        final profileData = Map<String, dynamic>.from(response['data']);
+        
+        // 이메일과 ID 정보 보완
+        if (existingEmail != null && !profileData.containsKey('email')) {
+          profileData['email'] = existingEmail;
+        }
+        if (existingId != null && (profileData['id'] == null || profileData['id'].toString().isEmpty)) {
+          profileData['id'] = existingId;
+        }
+        
+        _currentUser = UserModel.fromJson(profileData);
         await LocalStorageService.setObject('user_profile', _currentUser!.toJson());
         print('✅ 프로필 조회 성공: ${_currentUser?.name}');
       } else {

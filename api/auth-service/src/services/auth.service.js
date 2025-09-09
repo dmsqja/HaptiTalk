@@ -3,9 +3,13 @@ const User = require('../models/user.model');
 const tokenService = require('./token.service');
 const logger = require('../utils/logger');
 const {v4: uuidv4} = require('uuid');
+const axios = require('axios'); // User Service API 호출용
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_TIME_MINUTES = 30;
+
+// User Service URL 설정
+const USER_SERVICE_URL = process.env.USER_SERVICE_URL || 'http://user-service:3004';
 
 const authService = {
     /**
@@ -37,6 +41,17 @@ const authService = {
             });
 
             logger.info(`회원가입 성공: ${userData.email} (ID: ${user.id})`);
+
+            // User Service에 프로필 생성 요청
+            try {
+                await createUserProfile(user.id, userData.email, userData.username);
+                logger.info(`프로필 생성 성공: ${userData.email} (ID: ${user.id})`);
+            } catch (profileError) {
+                logger.error(`프로필 생성 실패: ${userData.email} (ID: ${user.id})`, {
+                    error: profileError.message
+                });
+                // 프로필 생성 실패는 치명적이지 않으므로 회원가입은 계속 진행
+            }
 
             return {
                 id: user.id,
@@ -301,6 +316,43 @@ const authService = {
         } catch (error) {
             logger.error('Error resetting password:', error);
             throw error;
+        }
+    }
+};
+
+/**
+ * User Service에 프로필 생성 요청
+ * @param {string} userId - 사용자 ID
+ * @param {string} email - 사용자 이메일
+ */
+const createUserProfile = async (userId, email, username) => {
+    try {
+        const response = await axios.post(`${USER_SERVICE_URL}/api/v1/users/profile/create`, {
+            userId: userId,
+            email: email,
+            username: username
+        }, {
+            timeout: 5000, // 5초 타임아웃
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Service-Name': 'auth-service'
+            }
+        });
+        
+        if (response.status === 200 || response.status === 201) {
+            return response.data;
+        } else {
+            throw new Error(`User Service API 응답 오류: ${response.status}`);
+        }
+    } catch (error) {
+        if (error.code === 'ECONNREFUSED') {
+            throw new Error('User Service에 연결할 수 없습니다');
+        } else if (error.code === 'ENOTFOUND') {
+            throw new Error('User Service 호스트를 찾을 수 없습니다');
+        } else if (error.response) {
+            throw new Error(`User Service API 오류: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`);
+        } else {
+            throw new Error(`User Service 호출 실패: ${error.message}`);
         }
     }
 };

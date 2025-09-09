@@ -87,11 +87,31 @@ router.get(
 /**
  * @route GET /api/v1/sessions/:id
  * @desc 세션 상세 정보 조회
- * @access Private
+ * @access Private or Service
  */
 router.get(
     '/:id',
-    authMiddleware.verifyToken, // JWT 토큰 검증 추가
+    // 서비스 토큰 또는 JWT 토큰 둘 다 허용
+    (req, res, next) => {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                message: '인증 토큰이 필요합니다.'
+            });
+        }
+        
+        const token = authHeader.split(' ')[1];
+        const serviceToken = process.env.INTER_SERVICE_TOKEN || 'default-service-token';
+        
+        // 서비스 토큰인 경우
+        if (token === serviceToken) {
+            return authMiddleware.validateServiceToken(req, res, next);
+        } else {
+            // JWT 토큰인 경우
+            return authMiddleware.verifyToken(req, res, next);
+        }
+    },
     [
         param('id').isUUID(4).withMessage('유효한 세션 ID가 아닙니다'),
         validationMiddleware.validate
@@ -245,11 +265,31 @@ router.get(
 /**
  * @route GET /api/v1/sessions/:id/status
  * @desc 세션 상태 조회
- * @access Private
+ * @access Private or Service
  */
 router.get(
     '/:id/status',
-    authMiddleware.verifyToken, // JWT 토큰 검증 추가
+    // 서비스 토큰 또는 JWT 토큰 둘 다 허용
+    (req, res, next) => {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                message: '인증 토큰이 필요합니다.'
+            });
+        }
+        
+        const token = authHeader.split(' ')[1];
+        const serviceToken = process.env.INTER_SERVICE_TOKEN || 'default-service-token';
+        
+        // 서비스 토큰인 경우
+        if (token === serviceToken) {
+            return authMiddleware.validateServiceToken(req, res, next);
+        } else {
+            // JWT 토큰인 경우
+            return authMiddleware.verifyToken(req, res, next);
+        }
+    },
     [
         param('id').isUUID(4).withMessage('유효한 세션 ID가 아닙니다'),
         validationMiddleware.validate

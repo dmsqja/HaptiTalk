@@ -14,12 +14,12 @@ router.post(
     feedbackController.generateFeedback
 );
 
-// STT 분석 결과 기반 피드백 생성 라우트 - 인증 필요
+// STT 분석 결과 기반 피드백 생성 라우트 (신규 형식) - 인증 필요
 router.post(
     '/analyze-stt',
     authenticateJWT,
     validate(feedbackValidation.processSTTAnalysis),
-    feedbackController.processSTTAnalysisResult
+    feedbackController.analyzeSTTAndGenerateFeedback
 );
 
 // 피드백 수신 확인 라우트 - 인증 필요

@@ -55,7 +55,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   int _speakingSpeed = 0;
   int _likability = 0;
   int _interest = 0;
-  String _currentScenario = 'dating'; // 기본 시나리오
+  String _currentScenario = 'presentation'; // 기본 시나리오를 발표로 변경
 
   String _lastHapticMessage = '';  // 🚫 중복 햅틱 방지
   DateTime? _lastHapticTime;  // ⏰ 마지막 햅틱 시간
@@ -103,8 +103,8 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     } else if (widget.sessionType == '면접' || widget.sessionType == '면접(인터뷰)') {
       _suggestedTopics = ['경력 소개', '성장 경험', '회사 지원 동기', '미래 계획', '강점과 약점'];
     } else {
-      // 소개팅 모드 (기본)
-    _suggestedTopics = ['여행 경험', '좋아하는 여행지', '사진 취미', '역사적 장소', '제주도 명소'];
+      // 기본값도 발표 관련으로 변경
+      _suggestedTopics = ['핵심 포인트 강조', '청중과의 소통', '시각적 자료 활용', '명확한 결론', '질의응답 준비'];
     }
     
     // STT 스트림 구독 상태 주기적 확인
@@ -469,91 +469,83 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
   /// 🎯 백엔드 햅틱 타입을 Apple Watch MVP 패턴으로 매핑
   Map<String, String>? _mapToWatchPattern(String backendType) {
     const patternMapping = {
-      // 자신감 관련 (발표/면접) - 개선 메시지들
+      // 🎯 새로운 4개 핵심 패턴 매핑 (D1, C1, C2, F1)
+      
+      // 자신감 관련 (발표/면접) - C1/C2 패턴 사용
       'confidence_low': {
-        'patternId': 'R2', // 강한 경고 패턴 (자신감 하락 → 강한 피드백 필요)
-        'pattern': 'interest_down',
-        'category': 'reaction',
+        'patternId': 'C2', // 자신감 하락 → 안정화 피드백
+        'pattern': 'confidence_alert',
+        'category': 'confidence',
       },
       'confidence_down': {
-        'patternId': 'R2', // 강한 경고 패턴 (자신감 급하락 → 강한 경고)
-        'pattern': 'interest_down',
-        'category': 'reaction',
+        'patternId': 'C2', // 자신감 급하락 → 안정화 피드백
+        'pattern': 'confidence_alert',
+        'category': 'confidence',
       },
-      
-      // 🎉 자신감 우수 - R1 패턴 활용
       'confidence_excellent': {
-        'patternId': 'R1', // 호감도 상승 패턴 (아름다운 4단계 상승 파동)
-        'pattern': 'likability_up',
-        'category': 'reaction',
+        'patternId': 'C1', // 자신감 상승 패턴
+        'pattern': 'confidence_boost',
+        'category': 'confidence',
       },
       
-      // 설득력 관련 (발표)
+      // 설득력 관련 (발표) - C1/C2 패턴으로 매핑
       'persuasion_low': {
-        'patternId': 'L3', // 질문 제안 패턴 (물음표 형태)
-        'pattern': 'question_suggestion',
-        'category': 'listener',
+        'patternId': 'C2', // 설득력 부족 → 자신감 안정화
+        'pattern': 'confidence_alert',
+        'category': 'confidence',
       },
-      
-      // 🎉 설득력 우수 - R1 패턴 활용
       'persuasion_excellent': {
-        'patternId': 'R1', // 호감도 상승 패턴
-        'pattern': 'likability_up',
-        'category': 'reaction',
+        'patternId': 'C1', // 설득력 우수 → 자신감 상승
+        'pattern': 'confidence_boost',
+        'category': 'confidence',
       },
       
-      // 안정감 관련 (면접)
+      // 안정감 관련 (면접) - C1/C2 패턴으로 매핑
       'stability_low': {
-        'patternId': 'F2', // 침묵 관리 패턴 (부드러운 알림)
-        'pattern': 'silence_management',
-        'category': 'flow',
+        'patternId': 'C2', // 안정감 부족 → 안정화 피드백
+        'pattern': 'confidence_alert',
+        'category': 'confidence',
       },
-      
-      // 🎉 안정감 우수 - R1 패턴 활용
       'stability_excellent': {
-        'patternId': 'R1', // 호감도 상승 패턴
-        'pattern': 'likability_up',
-        'category': 'reaction',
+        'patternId': 'C1', // 안정감 우수 → 자신감 상승
+        'pattern': 'confidence_boost',
+        'category': 'confidence',
       },
       
-      // 호감도 관련 (소개팅) - 개선 메시지
+      // 호감도 관련 (소개팅) - C1/C2 패턴으로 매핑
       'likeability_low': {
-        'patternId': 'F1', // 주제 전환 패턴 (호감도 낮을 때 주제 전환 제안)
-        'pattern': 'topic_change',
-        'category': 'flow',
+        'patternId': 'C2', // 호감도 낮음 → 자신감 안정화
+        'pattern': 'confidence_alert',
+        'category': 'confidence',
       },
-      
-      // 🎉 호감도 우수 - R1 패턴 활용
       'likeability_excellent': {
-        'patternId': 'R1', // 호감도 상승 패턴 (본래 용도)
-        'pattern': 'likability_up',
-        'category': 'reaction',
+        'patternId': 'C1', // 호감도 우수 → 자신감 상승
+        'pattern': 'confidence_boost',
+        'category': 'confidence',
       },
       
-      // 관심도 관련 (소개팅) - 개선 메시지들
+      // 관심도 관련 (소개팅) - C1/C2 패턴으로 매핑
       'interest_down': {
-        'patternId': 'F1', // 주제 전환 패턴 (관심도 하락 → 주제 전환 제안)
-        'pattern': 'topic_change',
-        'category': 'flow',
+        'patternId': 'C2', // 관심도 하락 → 자신감 안정화
+        'pattern': 'confidence_alert',
+        'category': 'confidence',
       },
       'interest_low': {
-        'patternId': 'F1', // 주제 전환 패턴 (관심도 낮을 때 주제 전환 제안)
-        'pattern': 'topic_change',
-        'category': 'flow',
+        'patternId': 'C2', // 관심도 낮음 → 자신감 안정화
+        'pattern': 'confidence_alert',
+        'category': 'confidence',
       },
-      
-      // 🎉 관심도 우수 - R1 패턴 활용
       'interest_excellent': {
-        'patternId': 'R1', // 호감도 상승 패턴
-        'pattern': 'likability_up',
-        'category': 'reaction',
+        'patternId': 'C1', // 관심도 우수 → 자신감 상승
+        'pattern': 'confidence_boost',
+        'category': 'confidence',
       },
       
-      // 말하기 속도 관련
+      // 말하기 속도 관련 - D1 패턴 사용
       'speed_fast': {
-        'patternId': 'S1', // 속도 조절 패턴
+        'patternId': 'D1', // 속도 조절 패턴
         'pattern': 'speed_control',
-        'category': 'speaker',
+        'category': 'delivery',
       },
     };
     
@@ -854,88 +846,116 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     final now = DateTime.now();
     List<Map<String, dynamic>> hapticEvents = [];
 
-    // 📊 S1: 속도 조절 패턴 (화자 행동)
+    // 📊 D1: 속도 조절 패턴 (전달력)
     final speedDiff = (prevSpeakingSpeed - _speakingSpeed).abs();
-    if (speedDiff >= 20 && _canSendHaptic('speaker', now)) {
+    if (speedDiff >= 20 && _canSendHaptic('delivery', now)) {
       if (_speakingSpeed >= 160) {  // 매우 빠름
         hapticEvents.add({
-          'category': 'speaker',
-          'patternId': 'S1',
-          'message': '🚀 말하기 속도가 너무 빨라요! 조금 천천히 해보세요',
+          'category': 'delivery',
+          'patternId': 'D1',
+          'message': '🐌 천천히 말해보세요',
           'priority': 'high',
           'pattern': 'speed_control'
         });
       }
     }
 
-    // 📊 R1: 호감도 상승 패턴 (상대방 반응)
+    // 📊 C1: 자신감/호감도 상승 패턴 (세션 타입별 적절한 패턴 사용)
     final likabilityDiff = _likability - prevLikability;
-    if (likabilityDiff >= 15 && _canSendHaptic('reaction', now)) {
+    if (likabilityDiff >= 15 && _canSendHaptic('confidence', now)) {
+      final sessionType = _getSessionTypeForMapping();
+      
       if (_likability >= 80) {
+        String message = '';
+        String patternId = '';
+        String category = '';
+        
+        switch (sessionType) {
+          case 'presentation':
+            message = '🎯 발표에 완전히 몰입하고 있어요!';
+            patternId = 'C1';
+            category = 'confidence';
+            break;
+          case 'interview':
+            message = '💼 면접에서 안정적인 모습을 보이고 있어요!';
+            patternId = 'C1';
+            category = 'confidence';
+            break;
+          default:
+            message = '🎉 환상적인 대화입니다!';
+            patternId = 'C1';
+            category = 'confidence';
+        }
         hapticEvents.add({
-          'category': 'reaction',
-          'patternId': 'R1',
-          'message': '🎉 환상적인 대화입니다!',
+          'category': category,
+          'patternId': patternId,
+          'message': message,
           'priority': 'high',
-          'pattern': 'likability_up'
+          'pattern': 'confidence_boost'
         });
       } else if (_likability >= 60) {
+        String message = '';
+        String patternId = '';
+        String category = '';
+        
+        switch (sessionType) {
+          case 'presentation':
+            message = '🚀 발표 자신감이 높아지고 있어요! ($_likability%)';
+            patternId = 'C1';
+            category = 'confidence';
+            break;
+          case 'interview':
+            message = '💪 면접 안정감이 향상되고 있어요! ($_likability%)';
+            patternId = 'C1';
+            category = 'confidence';
+            break;
+          default:
+            message = '💕 호감도가 상승했어요! ($_likability%)';
+            patternId = 'C1';
+            category = 'confidence';
+        }
         hapticEvents.add({
-          'category': 'reaction',
-          'patternId': 'R1',
-          'message': '💕 호감도가 상승했어요! ($_likability%)',
+          'category': category,
+          'patternId': patternId,
+          'message': message,
           'priority': 'high',
-          'pattern': 'likability_up'
+          'pattern': 'confidence_boost'
         });
       }
     }
 
-    // 📊 R2: 관심도 하락 패턴 (상대방 반응)
+    // 📊 C2: 자신감 하락 패턴 (안정화 필요)
     final interestDiff = _interest - prevInterest;
-    if (interestDiff <= -20 && _canSendHaptic('reaction', now)) {
-      hapticEvents.add({
-        'category': 'reaction',
-        'patternId': 'R2',
-        'message': '⚠️ 상대방의 관심도가 떨어지고 있어요',
-        'priority': 'high',
-        'pattern': 'interest_down'
-      });
-    }
-
-    // 📊 L1: 경청 강화 패턴 (청자 행동) - 감정 상태 변화 감지
-    if (_emotionState != prevEmotionState && _emotionState != '대기 중' && _canSendHaptic('listener', now)) {
-      if (_emotionState == '침착함' || _emotionState == '안정적') {
-        hapticEvents.add({
-          'category': 'listener',
-          'patternId': 'L1',
-          'message': '👂 더 적극적으로 경청해보세요',
-          'priority': 'medium',
-          'pattern': 'listening_enhancement'
-        });
+    if (interestDiff <= -20 && _canSendHaptic('confidence', now)) {
+      final sessionType = _getSessionTypeForMapping();
+      String message = '';
+      
+      switch (sessionType) {
+        case 'presentation':
+          message = '💪 더 자신감 있게 발표해보세요!';
+          break;
+        case 'interview':
+          message = '🧘 마음을 안정시키고 답변해보세요';
+          break;
+        default:
+          message = '💪 더 자신감 있게 대화해보세요!';
       }
-    }
-
-    // 📊 F1: 주제 전환 패턴 (대화 흐름) - 호감도는 높지만 관심도가 낮을 때
-    if (_likability >= 60 && _interest <= 40 && _canSendHaptic('flow', now)) {
+      
       hapticEvents.add({
-        'category': 'flow',
-        'patternId': 'F1',
-        'message': '🔄 주제를 자연스럽게 바꿔보세요',
-        'priority': 'medium',
-        'pattern': 'topic_change'
+        'category': 'confidence',
+        'patternId': 'C2',
+        'message': message,
+        'priority': 'high',
+        'pattern': 'confidence_alert'
       });
     }
 
-    // 📊 L3: 질문 제안 패턴 (청자 행동) - 대화가 단조로울 때
-    if (_interest <= 50 && _likability <= 50 && _canSendHaptic('listener', now)) {
-      hapticEvents.add({
-        'category': 'listener',
-        'patternId': 'L3',
-        'message': '❓ 상대방에게 질문해보세요',
-        'priority': 'medium',
-        'pattern': 'question_suggestion'
-      });
-    }
+    // 📊 제거됨: L1 패턴은 새로운 4개 핵심 패턴 설계에 포함되지 않음
+
+    // 📊 제거됨: 기존 F1(주제 전환)은 새로운 F1(필러워드 감지)와 충돌하므로 제거
+    // 대신 이런 상황에서는 C2(자신감 안정화) 패턴 사용 고려
+
+    // 📊 제거됨: L3 패턴은 새로운 4개 핵심 패턴 설계에 포함되지 않음
 
     // 📊 S2: 음량 조절 패턴 (화자 행동) - 추후 구현 (음성 볼륨 분석 필요)
     // 📊 F2: 침묵 관리 패턴 (대화 흐름) - 별도 타이머에서 처리 예정
@@ -1057,6 +1077,23 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
 
   /// 발화 밀도를 호감도로 매핑 (0-100)
   int _mapDensityToLikability(double speechDensity) {
+    // 🎯 세션 타입에 따른 다른 매핑 로직 적용
+    final currentSessionType = _getSessionTypeForMapping();
+    
+    if (currentSessionType == 'presentation') {
+      // 발표 시나리오: speech_density를 자신감으로 매핑
+      return _mapDensityToConfidence(speechDensity);
+    } else if (currentSessionType == 'interview') {
+      // 면접 시나리오: speech_density를 안정감으로 매핑
+      return _mapDensityToStability(speechDensity);
+    } else {
+      // 소개팅 시나리오: 기존 호감도 매핑 유지
+      return _mapDensityToLikabilityOriginal(speechDensity);
+    }
+  }
+
+  /// 원래 호감도 매핑 로직 (소개팅용)
+  int _mapDensityToLikabilityOriginal(double speechDensity) {
     if (speechDensity < 0.3) {
       return 20; // 발화 밀도가 낮으면 호감도 낮음
     } else if (speechDensity < 0.5) {
@@ -1067,6 +1104,50 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       return 80;
     } else {
       return 90; // 발화 밀도가 높으면 호감도 높음
+    }
+  }
+
+  /// 발화 밀도를 자신감으로 매핑 (발표용)
+  int _mapDensityToConfidence(double speechDensity) {
+    if (speechDensity < 0.2) {
+      return 30; // 발화 밀도가 매우 낮으면 자신감 부족
+    } else if (speechDensity < 0.4) {
+      return 50;
+    } else if (speechDensity < 0.6) {
+      return 70; // 적절한 발화 밀도
+    } else if (speechDensity < 0.8) {
+      return 85;
+    } else {
+      return 95; // 높은 발화 밀도는 강한 자신감
+    }
+  }
+
+  /// 발화 밀도를 안정감으로 매핑 (면접용)
+  int _mapDensityToStability(double speechDensity) {
+    if (speechDensity < 0.3) {
+      return 40; // 너무 조용하면 불안정
+    } else if (speechDensity < 0.5) {
+      return 60;
+    } else if (speechDensity < 0.7) {
+      return 80; // 적절한 발화로 안정감
+    } else if (speechDensity < 0.9) {
+      return 85;
+    } else {
+      return 75; // 너무 많이 말하면 오히려 불안감
+    }
+  }
+
+  /// 세션 타입 매핑용 헬퍼 함수
+  String _getSessionTypeForMapping() {
+    switch (widget.sessionType) {
+      case '발표':
+        return 'presentation';
+      case '면접':
+        return 'interview';
+      case '소개팅':
+        return 'dating';
+      default:
+        return 'presentation'; // 기본값
     }
   }
 
@@ -1639,8 +1720,8 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
     switch (sessionType) {
       case '발표':
         return 'presentation'; // presentation 시나리오 사용
-      case '소개팅':
-        return 'dating'; // dating 시나리오 사용
+      // case '소개팅':
+      //   return 'dating'; // dating 시나리오 사용 - 소개팅 기능 비활성화
       case '면접':
         return 'interview'; // interview 시나리오 사용
       case '코칭':
@@ -1648,7 +1729,7 @@ class _RealtimeAnalysisScreenState extends State<RealtimeAnalysisScreen> {
       case '회의':  // 혹시 모를 레거시 케이스
         return 'business';
       default:
-        return 'general';  // 기본값을 general로 변경
+        return 'presentation';  // 기본값을 presentation으로 변경
     }
   }
 

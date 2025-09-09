@@ -12,18 +12,16 @@ const saveSegment = async (req, res) => {
         const userId = req.user.id;
 
         logger.info(`세그먼트 저장 요청: sessionId=${sessionId}, segmentIndex=${segmentIndex}, userId=${userId}`);
-
         const segmentData = {
             sessionId,
             userId,
-            segmentIndex,
+            segmentIndex: parseInt(segmentIndex, 10),
             timestamp: new Date(timestamp),
             transcription: transcription || '',
             analysis: analysis || {},
             hapticFeedbacks: hapticFeedbacks || [],
             suggestedTopics: suggestedTopics || []
         };
-
         const result = await analyticsService.saveSegment(segmentData);
 
         logger.info(`세그먼트 저장 완료: sessionId=${sessionId}, segmentIndex=${segmentIndex}`);
@@ -39,7 +37,9 @@ const saveSegment = async (req, res) => {
             sessionId: req.params.sessionId,
             segmentIndex: req.body.segmentIndex,
             userId: req.user?.id,
-            error: error.stack 
+            error: error.stack,
+            mongoError: error.errInfo || null,
+            writeErrors: error.writeErrors || null
         });
 
         if (error.code === 11000) {

@@ -15,11 +15,11 @@ struct SessionSummaryView: View {
     
     let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     
-    init(sessionMode: String = "소개팅 모드", 
+    init(sessionMode: String = "발표 모드", 
          totalTime: String = "1:32:05", 
          mainEmotion: String = "긍정적", 
          likeabilityPercent: String = "88%", 
-         coreFeedback: String = "여행 주제에서 높은 호감도를 보였으며, 경청하는 자세가 매우 효과적이었습니다.") {
+         coreFeedback: String = "핵심 메시지 전달이 명확했으며, 청중과의 소통이 매우 효과적이었습니다.") {
         self.sessionMode = sessionMode
         self.totalTime = totalTime
         self.mainEmotion = mainEmotion

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:haptitalk/constants/colors.dart';
 import 'package:haptitalk/services/watch_service.dart';
@@ -28,196 +29,118 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
   bool _showVisualFeedback = false;
   String _currentVisualPattern = '';
 
-  // 🎯 HaptiTalk 설계 문서 기반 8개 기본 MVP 패턴 (🔥 수정된 버전)
+  // 🎯 새로운 4개 핵심 햅틱 패턴 (발표/면접 특화)
   final List<Map<String, dynamic>> _allHapticPatterns = [
+    // 📢 D1: 속도 조절 (급한 리듬)
     {
-      'patternId': 'S1',
-      'category': 'speaker',
+      'patternId': 'D1',
+      'category': 'delivery',
       'title': '속도 조절',
-      'description': '말하기 속도가 너무 빠를 때',
-      'metaphor': '빠른 심장 박동',
+      'description': '말하기 속도가 너무 빠르거나 느릴 때',
+      'metaphor': '급한 리듬 (빠른 3연타)',
       'pattern': 'speed_control',
-      'icon': Icons.speed,
+      'icon': Icons.speed, // 워치: speedometer
       'color': Colors.orange,
-      'sessions': ['발표', '면접', '소개팅'], // 모든 세션에서 사용
+      'sessions': ['발표', '면접'],
       'messages': {
-        '발표': '🚀 조금 천천히 말해보세요',
-        '면접': '🚀 답변 속도를 조절하세요', 
-        '소개팅': '🚀 대화 속도를 조절하세요',
+        '발표': '천천히 말해보세요',
+        '면접': '천천히 답변해보세요',
       },
       'titles': {
         '발표': '발표 속도 조절',
         '면접': '답변 속도 조절',
-        '소개팅': '대화 속도 조절',
       },
-      'vibration': '3회 강한 진동',
+      'vibration': '짧음-짧음-짧음 (빠른 3연타)',
+      'duration': '0.9초',
+      'isActive': true,
     },
+
+    // 💪 C1: 자신감 상승 (상승 웨이브)
     {
-      'patternId': 'L1',
-      'category': 'listener',
-      'title': '경청 강화',
-      'description': '더 적극적으로 경청하라는 신호',
-      'metaphor': '점진적 주의 집중',
-      'pattern': 'listening_enhancement',
-      'icon': Icons.hearing,
-      'color': Colors.blue,
-      'sessions': ['발표', '면접', '소개팅'],
+      'patternId': 'C1',
+      'category': 'confidence',
+      'title': '자신감 상승',
+      'description': '목소리에 자신감이 느껴질 때',
+      'metaphor': '상승 웨이브 (약함→강함→여운)',
+      'pattern': 'confidence_boost',
+      'icon': Icons.trending_up, // 워치: chart.line.uptrend.xyaxis
+      'color': Colors.green,
+      'sessions': ['발표', '면접'],
       'messages': {
-        '발표': '👂 청중과의 소통을 강화하세요',
-        '면접': '👂 면접관의 질문에 집중하세요',
-        '소개팅': '👂 상대방의 말에 집중하세요',
+        '발표': '훌륭한 발표 자신감이에요!',
+        '면접': '확신감 있는 답변이에요!',
       },
       'titles': {
-        '발표': '청중 소통 강화',
-        '면접': '면접관 경청',
-        '소개팅': '상대방 경청',
+        '발표': '발표 자신감 상승',
+        '면접': '면접 자신감 상승',
       },
-      'vibration': '약함→중간→강함',
+      'vibration': '약함→강함→여운 (점진적 상승)',
+      'duration': '1.1초',
+      'isActive': true,
     },
+
+    // 🧘 C2: 자신감 하락 (부드러운 경고)
+    {
+      'patternId': 'C2',
+      'category': 'confidence',
+      'title': '자신감 하락',
+      'description': '자신감이 떨어질 때 (격려)',
+      'metaphor': '부드러운 경고 (강함-휴지-강함)',
+      'pattern': 'confidence_alert',
+      'icon': Icons.trending_down, // 워치: chart.line.downtrend.xyaxis
+      'color': Colors.purple,
+      'sessions': ['발표', '면접'],
+      'messages': {
+        '발표': '더 자신감 있게 발표하세요!',
+        '면접': '더 자신감 있게 답변하세요!',
+      },
+      'titles': {
+        '발표': '발표 자신감 하락',
+        '면접': '면접 자신감 하락',
+      },
+      'vibration': '강함-휴지-강함 (2회 경고)',
+      'duration': '0.9초',
+      'isActive': true,
+    },
+
+    // 🗣️ F1: 필러워드 감지 (가벼운 지적)
     {
       'patternId': 'F1',
-      'category': 'flow',
-      'title': '주제 전환', // 관심도 하락 시 주제 전환 제안
-      'description': '관심도가 하락했을 때 주제를 바꿀 타이밍',
-      'metaphor': '페이지 넘기기',
-      'pattern': 'topic_change',
-      'icon': Icons.change_circle,
-      'color': Colors.green,
-      'sessions': ['발표', '면접', '소개팅'],
+      'category': 'filler',
+      'title': '필러워드 감지',
+      'description': '"음", "어", "그런" 등 불필요한 감탄사',
+      'metaphor': '가벼운 지적 (톡-톡)',
+      'pattern': 'filler_word_alert',
+      'icon': Icons.warning_amber, // 워치: exclamationmark.bubble
+      'color': Colors.blue,
+      'sessions': ['발표', '면접'],
       'messages': {
-        '발표': '⚠️ 주제를 바꿔보세요',
-        '면접': '⚠️ 주제를 바꿔보세요',
-        '소개팅': '⚠️ 주제를 바꿔보세요',
+        '발표': '"음", "어" 등을 줄여보세요',
+        '면접': '"음", "어" 등을 줄여보세요',
       },
       'titles': {
-        '발표': '발표 주제 전환',
-        '면접': '면접 주제 전환',
-        '소개팅': '대화 주제 전환',
+        '발표': '발표 표현 정제',
+        '면접': '답변 표현 정제',
       },
-      'vibration': '2회 긴 진동',
-    },
-    {
-      'patternId': 'R1',
-      'category': 'reaction',
-      'title': '우수 상태', // 호감도/자신감 우수
-      'description': '상대방의 반응이 매우 좋을 때',
-      'metaphor': '상승하는 파동',
-      'pattern': 'likability_up',
-      'icon': Icons.celebration,
-      'color': Colors.pink,
-      'sessions': ['발표', '면접', '소개팅'],
-      'messages': {
-        '발표': '🎉 훌륭한 발표 자신감이에요!',
-        '면접': '👔 면접 자신감이 훌륭해요!',
-        '소개팅': '💕 상대방이 매우 좋아해요!',
-      },
-      'titles': {
-        '발표': '발표 자신감 우수',
-        '면접': '면접 자신감 우수',
-        '소개팅': '호감도 우수',
-      },
-      'vibration': '4회 상승 파동',
-    },
-    {
-      'patternId': 'F2',
-      'category': 'flow',
-      'title': '침묵 관리',
-      'description': '적절한 침묵 후 대화를 재개하라는 신호',
-      'metaphor': '부드러운 알림',
-      'pattern': 'silence_management',
-      'icon': Icons.volume_off,
-      'color': Colors.grey,
-      'sessions': ['발표', '면접', '소개팅'],
-      'messages': {
-        '발표': '⏸️ 적절한 휴지를 활용하세요',
-        '면접': '🧘‍♂️ 더 차분하게 답변해보세요',
-        '소개팅': '⏸️ 자연스러운 침묵을 활용하세요',
-      },
-      'titles': {
-        '발표': '발표 휴지 관리',
-        '면접': '면접 침묵 관리',
-        '소개팅': '대화 침묵 관리',
-      },
-      'vibration': '2회 부드러운 탭',
-    },
-    {
-      'patternId': 'S2',
-      'category': 'speaker',
-      'title': '음량 조절',
-      'description': '목소리 크기 조절이 필요할 때',
-      'metaphor': '음파 증폭/감소',
-      'pattern': 'volume_control',
-      'icon': Icons.volume_up,
-      'color': Colors.purple,
-      'sessions': ['발표', '면접', '소개팅'],
-      'messages': {
-        '발표': '🔊 발표 음량을 조절하세요',
-        '면접': '🔊 답변 음량을 조절하세요',
-        '소개팅': '🔊 목소리 크기를 조절하세요',
-      },
-      'titles': {
-        '발표': '발표 음량 조절',
-        '면접': '답변 음량 조절',
-        '소개팅': '대화 음량 조절',
-      },
-      'vibration': '극명한 강도 변화 (약함↔강함)',
-    },
-    {
-      'patternId': 'R2',
-      'category': 'reaction',
-      'title': '자신감/호감도 부족', // 수정: 관심도 하락 → 자신감/호감도 부족
-      'description': '자신감이 부족하거나 호감도가 떨어졌을 때',
-      'metaphor': '강한 경고 알림',
-      'pattern': 'confidence_low', // 패턴명도 수정
-      'icon': Icons.warning,
-      'color': Colors.red,
-      'sessions': ['발표', '면접', '소개팅'],
-      'messages': {
-        '발표': '💪 더 자신감 있게 말해보세요!',
-        '면접': '👔 자신감을 가지고 답변해보세요!',
-        '소개팅': '💕 더 밝고 긍정적으로 대화해보세요!',
-      },
-      'titles': {
-        '발표': '발표 자신감 부족',
-        '면접': '면접 자신감 부족',
-        '소개팅': '호감도 부족',
-      },
-      'vibration': '4회 강한 경고',
-    },
-    {
-      'patternId': 'L3',
-      'category': 'listener',
-      'title': '질문 제안',
-      'description': '적절한 질문을 던질 타이밍',
-      'metaphor': '물음표 형태',
-      'pattern': 'question_suggestion',
-      'icon': Icons.help_outline,
-      'color': Colors.teal,
-      'sessions': ['발표', '면접', '소개팅'],
-      'messages': {
-        '발표': '🎯 핵심 포인트를 강조해보세요',
-        '면접': '❓ 궁금한 점을 질문해보세요',
-        '소개팅': '🗣️ 더 흥미로운 대화를 시도해보세요!',
-      },
-      'titles': {
-        '발표': '핵심 포인트 강조',
-        '면접': '질문 제안',
-        '소개팅': '대화 제안',
-      },
-      'vibration': '짧음-짧음-긴휴지-긴진동-여운',
+      'vibration': '톡-톡 (짧은 2연타)',
+      'duration': '0.2초',
+      'isActive': true,
     },
   ];
 
-  // 현재 선택된 세션 모드에 맞는 패턴들만 필터링
+  // 활성화된 패턴들만 필터링 (세션 모드별)
   List<Map<String, dynamic>> get _hapticPatterns {
     return _allHapticPatterns.where((pattern) {
-      return (pattern['sessions'] as List<String>).contains(_selectedSessionMode);
+      // 🔥 활성화된 패턴이면서 현재 세션에 속한 패턴만 표시
+      final isActive = pattern['isActive'] ?? false;
+      final sessions = pattern['sessions'] as List<String>;
+      return isActive && sessions.contains(_selectedSessionMode);
     }).map((pattern) {
       // 세션별 메시지 적용
       final sessionMessages = pattern['messages'] as Map<String, String>;
       return {
         ...pattern,
-        'message': sessionMessages[_selectedSessionMode] ?? pattern['messages']['소개팅'],
+        'message': sessionMessages[_selectedSessionMode] ?? '기본 메시지',
       };
     }).toList();
   }
@@ -263,8 +186,8 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
         sessionType: _selectedSessionMode, // 🔥 현재 선택된 세션 모드 전달
       );
 
-      // 🔥 Flutter 앱 연습화면에서는 시각적 피드백을 2-3초로 통일
-      int duration = 3; // 모든 패턴을 3초로 통일
+      // 🔥 Flutter 앱 연습화면에서는 시각적 피드백을 4초로 통일
+      int duration = 4; // 모든 패턴을 4초로 통일 (1초 연장)
       
       Future.delayed(Duration(seconds: duration), () {
         if (mounted) {
@@ -291,34 +214,39 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
     });
 
     switch (patternId) {
-      case 'S1': // 속도 조절 - 빠른 펄스
+      // 🎯 새로운 4개 핵심 패턴 애니메이션
+      case 'D1': // 전달력: 속도 조절 - 리듬감 있는 펄스
         _triggerFastPulseAnimation();
         break;
+      case 'C1': // 자신감: 확신도 상승 - 상승 파동
+        _triggerRisingWaveAnimation();
+        break;
+              case 'C2': // 자신감: 하락 - 떨어지는 화살표 효과
+        _triggerConfidenceDropAnimation();
+        break;
+      case 'F1': // 필러워드: 감지 - 짧은 펄스
+        _triggerShortPulseAnimation();
+        break;
+        
+      // 🔒 비활성화된 패턴들 (주석 처리)
+      /*
       case 'L1': // 경청 강화 - 점진적 증가
         _triggerGradualIntensityAnimation();
         break;
       case 'F1': // 주제 전환 - 긴 페이드
         _triggerLongFadeAnimation();
         break;
-      case 'R1': // 호감도 상승 - 상승 파동
-        _triggerRisingWaveAnimation();
-        break;
-      case 'F2': // 침묵 관리 - 부드러운 펄스
-        _triggerSoftPulseAnimation();
-        break;
-      case 'S2': // 음량 조절 - 변화하는 크기
-        _triggerVaryingSizeAnimation();
-        break;
-      case 'R2': // 자신감/호감도 부족 - 강한 경고
-        _triggerAlertAnimation();
+      case 'F2': // 침묵 관리 - 부드러운 펄스 (비활성화됨)
+        // _triggerSoftPulseAnimation(); // 비활성화된 패턴
         break;
       case 'L3': // 질문 제안 - 물음표 형태
         _triggerQuestionMarkAnimation();
         break;
+      */
     }
   }
 
-  // S1: 빠른 펄스 애니메이션 (빠른 심장 박동)
+  // D1: 빠른 펄스 애니메이션 (빠른 심장 박동)
   void _triggerFastPulseAnimation() {
     _pulseController.reset();
     _pulseController.repeat(count: 3);
@@ -345,10 +273,13 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
     _waveController.forward();
   }
 
-  // F2: 부드러운 펄스 애니메이션
-  void _triggerSoftPulseAnimation() {
+  // C2: 자신감 하락 애니메이션 (워치와 동일하게 한번만 실행)
+  void _triggerConfidenceDropAnimation() {
     _pulseController.reset();
-    _pulseController.repeat(count: 2);
+    _pulseController.duration = Duration(milliseconds: 2500); // 2.5초 총 시간
+    _pulseController.forward().then((_) {
+      _pulseController.duration = Duration(milliseconds: 500); // 원복
+    });
   }
 
   // S2: 크기 변화 애니메이션 (음파)
@@ -370,6 +301,12 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
   void _triggerQuestionMarkAnimation() {
     _pulseController.reset();
     _pulseController.repeat(count: 4); // 단순한 4회 반복으로 변경
+  }
+
+  // F1: 짧은 펄스 애니메이션 (가벼운 지적)
+  void _triggerShortPulseAnimation() {
+    _pulseController.reset();
+    _pulseController.repeat(count: 2);
   }
 
   void _showErrorSnackBar(String message) {
@@ -609,7 +546,7 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
                 });
               }
             },
-            items: ['발표', '면접', '소개팅'].map<DropdownMenuItem<String>>((String value) {
+            items: ['발표', '면접'].map<DropdownMenuItem<String>>((String value) {
               return DropdownMenuItem<String>(
                 value: value,
                 child: Text(value),
@@ -626,7 +563,7 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '8가지 기본 햅틱 패턴',
+          '4가지 핵심 햅틱 패턴',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -761,12 +698,12 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
   }
 
   Widget _buildCategoryLegend() {
-    final categories = [
-      {'key': 'speaker', 'label': '화자 행동 (S)', 'color': Colors.orange},
-      {'key': 'listener', 'label': '청자 행동 (L)', 'color': Colors.blue},
-      {'key': 'flow', 'label': '대화 흐름 (F)', 'color': Colors.green},
-      {'key': 'reaction', 'label': '상대방 반응 (R)', 'color': Colors.pink},
-    ];
+          // 🎯 새로운 4개 핵심 카테고리
+      final categories = [
+        {'key': 'delivery', 'label': '전달력 (D)', 'color': Colors.orange},
+        {'key': 'confidence', 'label': '자신감 (C)', 'color': Colors.green},
+        {'key': 'filler', 'label': '필러워드 (F)', 'color': Colors.blue},
+      ];
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -817,8 +754,12 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
 
   Color _getCategoryColor(String category) {
     switch (category) {
-      case 'speaker':
+      case 'delivery':
         return Colors.orange;
+      case 'confidence':
+        return Colors.green;
+      case 'filler':
+        return Colors.blue;
       case 'listener':
         return Colors.blue;
       case 'flow':
@@ -868,36 +809,13 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
               child: Column( // 🔧 Stack 대신 Column 사용으로 안전한 레이아웃
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 🎨 패턴별 시각적 효과와 아이콘을 같은 위치에 겹쳐서 표시
+                  // 🎨 패턴별 시각적 효과 - 아이콘과 배경을 하나로 통합
                   Container(
                     height: 150, // 🔧 크기 축소 (200 → 150)
                     width: 150,  // 🔧 크기 축소 (200 → 150)
                     margin: EdgeInsets.all(15), // 🔧 여백 축소 (20 → 15)
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // 🎨 패턴별 시각적 효과 (배경)
-                        _buildPatternVisualEffect(),
-                        
-                        // 🔥 패턴 아이콘 - 중앙에 겹쳐서 표시
-                        Container(
-                          width: 60, // 🔧 크기 축소 (80 → 60)
-                          height: 60, // 🔧 크기 축소 (80 → 60)
-                          decoration: BoxDecoration(
-                            color: _getPatternColor(_currentVisualPattern).withOpacity(0.2),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: _getPatternColor(_currentVisualPattern),
-                              width: 2, // 🔧 선 두께 축소 (3 → 2)
-                            ),
-                          ),
-                          child: Icon(
-                            _getPatternIcon(_currentVisualPattern),
-                            size: 30, // 🔧 아이콘 크기 축소 (40 → 30)
-                            color: _getPatternColor(_currentVisualPattern),
-                          ),
-                        ),
-                      ],
+                    child: Center(
+                      child: _buildPatternVisualEffect(),
                     ),
                   ),
                   
@@ -948,176 +866,131 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
     );
   }
 
-  // 🎨 패턴별 시각적 효과 위젯 - 🔧 안전한 크기로 조정
+  // 🎨 패턴별 시각적 효과 위젯 - 고정된 아이콘과 패턴별 애니메이션 배경
   Widget _buildPatternVisualEffect() {
     Color patternColor = _getPatternColor(_currentVisualPattern);
+    IconData patternIcon = _getPatternIcon(_currentVisualPattern);
     
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // 🎨 패턴별 애니메이션 배경
+        _buildPatternSpecificAnimation(patternColor),
+        
+        // 🔥 고정된 아이콘 - 애니메이션 없이 중앙에 고정
+        Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: patternColor.withOpacity(0.15),
+            border: Border.all(
+              color: patternColor,
+              width: 3,
+            ),
+          ),
+          child: Icon(
+            patternIcon,
+            size: 40,
+            color: patternColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 🎨 패턴별 특화 애니메이션 배경
+  Widget _buildPatternSpecificAnimation(Color patternColor) {
     switch (_currentVisualPattern) {
-      case 'S1': // 속도 조절 - 빠른 펄스
+      case 'D1': // 빠른 펄스 (3회 반복)
         return AnimatedBuilder(
           animation: _pulseController,
           builder: (context, child) {
+            double pulseScale = 1.0 + (0.3 * sin(_pulseController.value * 2 * pi));
             return Transform.scale(
-              scale: _scaleAnimation.value,
+              scale: pulseScale,
               child: Container(
-                width: 120,
-                height: 120,
+                width: 100,
+                height: 100,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: patternColor.withOpacity(0.6 * _opacityAnimation.value),
+                  color: patternColor.withOpacity(0.1),
+                  border: Border.all(
+                    color: patternColor.withOpacity(0.3),
+                    width: 2,
+                  ),
                 ),
               ),
             );
           },
         );
       
-      case 'L1': // 경청 강화 - 점진적 증가
-        return AnimatedBuilder(
-          animation: _visualFeedbackController,
-          builder: (context, child) {
-            return Container(
-              width: 100 + (60 * _visualFeedbackController.value),
-              height: 100 + (60 * _visualFeedbackController.value),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: patternColor.withOpacity(0.3),
-                border: Border.all(
-                  color: patternColor,
-                  width: 2 + (3 * _visualFeedbackController.value),
-                ),
-              ),
-            );
-          },
-        );
-      
-      case 'F1': // 주제 전환 - 긴 페이드
-        return AnimatedBuilder(
-          animation: _pulseController,
-          builder: (context, child) {
-            return Container(
-              width: 180,
-              height: 60,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(30),
-                color: patternColor.withOpacity(0.7 * _opacityAnimation.value),
-              ),
-            );
-          },
-        );
-      
-      case 'R1': // 호감도 상승 - 상승 파동
+      case 'C1': // 상승 파동 애니메이션
         return AnimatedBuilder(
           animation: _waveController,
           builder: (context, child) {
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(4, (index) {
-                double delay = index * 0.25;
-                double animationValue = (_waveAnimation.value - delay).clamp(0.0, 1.0);
-                return Container(
-                  margin: EdgeInsets.symmetric(vertical: 3),
-                  width: 140,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(6),
-                    color: patternColor.withOpacity(0.8 * animationValue),
-                  ),
-                );
-              }),
-            );
-          },
-        );
-      
-      case 'F2': // 침묵 관리 - 부드러운 펄스
-        return AnimatedBuilder(
-          animation: _pulseController,
-          builder: (context, child) {
+            double waveScale = 1.0 + (0.5 * _waveController.value); // 상승하는 느낌
+            double waveOpacity = 1.0 - (0.7 * _waveController.value); // 점점 투명해짐
             return Transform.scale(
-              scale: 1.0 + (0.3 * _scaleAnimation.value),
+              scale: waveScale,
               child: Container(
-                width: 110,
-                height: 110,
+                width: 100,
+                height: 100,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: patternColor.withOpacity(0.4),
+                  color: patternColor.withOpacity(0.1 * waveOpacity),
+                  border: Border.all(
+                    color: patternColor.withOpacity(0.6 * waveOpacity),
+                    width: 3,
+                  ),
                 ),
               ),
             );
           },
         );
       
-      case 'S2': // 음량 조절 - 변화하는 크기
-        return AnimatedBuilder(
-          animation: _visualFeedbackController,
-          builder: (context, child) {
-            double size = 80 + (80 * _visualFeedbackController.value);
-            return Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: patternColor.withOpacity(0.5),
-                border: Border.all(color: patternColor, width: 2),
-              ),
-            );
-          },
-        );
-      
-      case 'R2': // 자신감/호감도 부족 - 강한 경고
+      case 'C2': // 하락 애니메이션 (긴 시간)
         return AnimatedBuilder(
           animation: _pulseController,
           builder: (context, child) {
-            return Container(
-              width: 130,
-              height: 130,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _pulseController.value > 0.5 
-                    ? Colors.red.withOpacity(0.8) 
-                    : Colors.red.withOpacity(0.3),
+            double pulseScale = 1.0 + (0.2 * sin(_pulseController.value * 2 * pi));
+            return Transform.scale(
+              scale: pulseScale,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: patternColor.withOpacity(0.1),
+                  border: Border.all(
+                    color: patternColor.withOpacity(0.4),
+                    width: 2,
+                  ),
+                ),
               ),
             );
           },
         );
       
-      case 'L3': // 질문 제안 - 물음표 형태 - 🔧 안전한 버전
+      case 'F1': // 짧은 펄스 (2회 반복)
         return AnimatedBuilder(
           animation: _pulseController,
           builder: (context, child) {
-            // 안전한 범위로 애니메이션 값 제한
-            double safeScale = (_scaleAnimation.value).clamp(0.5, 2.0);
-            double safeOpacity = (_opacityAnimation.value).clamp(0.0, 1.0);
-            
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // 물음표의 위쪽 곡선 부분
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: patternColor.withOpacity(0.6 * safeOpacity),
-                    border: Border.all(
-                      color: patternColor.withOpacity(safeOpacity),
-                      width: 3,
-                    ),
+            double pulseScale = 1.0 + (0.25 * sin(_pulseController.value * 2 * pi));
+            return Transform.scale(
+              scale: pulseScale,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: patternColor.withOpacity(0.1),
+                  border: Border.all(
+                    color: patternColor.withOpacity(0.4),
+                    width: 2,
                   ),
                 ),
-                SizedBox(height: 15),
-                // 물음표의 점 부분
-                Transform.scale(
-                  scale: safeScale.clamp(0.8, 1.5),
-                  child: Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: patternColor.withOpacity(0.8 * safeOpacity),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             );
           },
         );
@@ -1128,7 +1001,11 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
           height: 100,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.grey.withOpacity(0.3),
+            color: patternColor.withOpacity(0.1),
+            border: Border.all(
+              color: patternColor.withOpacity(0.3),
+              width: 2,
+            ),
           ),
         );
     }
@@ -1136,18 +1013,15 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
 
   Color _getPatternColor(String patternId) {
     switch (patternId) {
-      case 'S1':
-      case 'S2':
-        return Colors.orange;
-      case 'L1':
-      case 'L3':
-        return Colors.blue;
+      // 🎯 새로운 4개 핵심 패턴 색상
+      case 'D1':
+        return Colors.orange; // 전달력: 속도 조절
+      case 'C1':
+        return Colors.green; // 자신감: 상승
+      case 'C2':
+        return Colors.purple; // 자신감: 하락 (구분을 위해 다른 색상)
       case 'F1':
-      case 'F2':
-        return Colors.green;
-      case 'R1':
-      case 'R2':
-        return Colors.pink;
+        return Colors.blue; // 필러워드
       default:
         return Colors.grey;
     }
@@ -1155,54 +1029,48 @@ class _HapticPracticeScreenState extends State<HapticPracticeScreen>
 
   IconData _getPatternIcon(String patternId) {
     switch (patternId) {
-      case 'S1':
-        return Icons.speed;
-      case 'L1':
-        return Icons.hearing;
+      // 🎯 워치와 동일한 4개 핵심 패턴 아이콘
+      case 'D1':
+        return Icons.speed; // 워치: speedometer
+      case 'C1':
+        return Icons.trending_up; // 워치: chart.line.uptrend.xyaxis
+      case 'C2':
+        return Icons.trending_down; // 워치: chart.line.downtrend.xyaxis
       case 'F1':
-        return Icons.change_circle;
-      case 'R1':
-        return Icons.celebration;
-      case 'F2':
-        return Icons.volume_off;
-      case 'S2':
-        return Icons.volume_up;
-      case 'R2':
-        return Icons.warning;
-      case 'L3':
-        return Icons.help_outline;
+        return Icons.warning_amber; // 워치: exclamationmark.bubble
       default:
         return Icons.help_outline;
     }
   }
 
   String _getPatternTitle(String patternId) {
-    // 현재 선택된 세션 모드에 따라 다른 제목 반환
+    // 활성화된 4개 핵심 패턴 제목 반환
     switch (patternId) {
-      case 'S1':
-        return _selectedSessionMode == '발표' ? '발표 속도 조절' :
-               _selectedSessionMode == '면접' ? '답변 속도 조절' : '대화 속도 조절';
+      // ✅ 활성화된 패턴들
+      case 'D1':
+        return _selectedSessionMode == '발표' ? '발표 속도 조절' : '답변 속도 조절';
+      case 'C1':
+        return _selectedSessionMode == '발표' ? '발표 자신감 상승' : '면접 자신감 상승';
+      case 'C2':
+        return _selectedSessionMode == '발표' ? '발표 자신감 하락' : '면접 자신감 하락';
+      case 'F1':
+        return _selectedSessionMode == '발표' ? '발표 표현 정제' : '답변 표현 정제';
+        
+      // 🔒 비활성화된 패턴들 (주석 처리)
+      /*
       case 'L1':
         return _selectedSessionMode == '발표' ? '청중 소통 강화' :
                _selectedSessionMode == '면접' ? '면접관 경청' : '상대방 경청';
       case 'F1':
         return _selectedSessionMode == '발표' ? '발표 주제 전환' :
                _selectedSessionMode == '면접' ? '면접 주제 전환' : '대화 주제 전환';
-      case 'R1':
-        return _selectedSessionMode == '발표' ? '발표 자신감 우수' :
-               _selectedSessionMode == '면접' ? '면접 자신감 우수' : '호감도 우수';
       case 'F2':
         return _selectedSessionMode == '발표' ? '발표 휴지 관리' :
                _selectedSessionMode == '면접' ? '면접 침묵 관리' : '대화 침묵 관리';
-      case 'S2':
-        return _selectedSessionMode == '발표' ? '발표 음량 조절' :
-               _selectedSessionMode == '면접' ? '답변 음량 조절' : '대화 음량 조절';
-      case 'R2':
-        return _selectedSessionMode == '발표' ? '발표 자신감 부족' :
-               _selectedSessionMode == '면접' ? '면접 자신감 부족' : '호감도 부족';
       case 'L3':
         return _selectedSessionMode == '발표' ? '핵심 포인트 강조' :
                _selectedSessionMode == '면접' ? '질문 제안' : '대화 제안';
+      */
       default:
         return 'Unknown Pattern';
     }

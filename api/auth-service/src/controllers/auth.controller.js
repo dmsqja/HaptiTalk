@@ -15,11 +15,11 @@ const authController = {
      */
     register: async (req, res, next) => {
         try {
-            const {email, password, device_info} = req.body;
+            const {email, password, username, device_info} = req.body;
 
             // Register user with resilience
             const newUser = await withDbResilience(
-                async () => authService.register({email, password}),
+                async () => authService.register({email, password, username}),
                 { operationName: 'user_registration' }
             );
 

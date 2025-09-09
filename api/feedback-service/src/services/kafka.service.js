@@ -1,7 +1,7 @@
 /**
  * 피드백 서비스의 Kafka 관리 모듈
  */
-const { createKafkaClient } = require('../../api/shared/kafka-client');
+const { createKafkaClient } = require('../api/shared/kafka-client');
 const logger = require('../utils/logger');
 
 // Kafka 클라이언트 생성

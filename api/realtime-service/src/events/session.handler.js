@@ -20,38 +20,53 @@ module.exports = (io, socket, redisClient, messagingSystem) => {
                 logger.info(`세션 ${sessionId}가 존재하지 않음, 자동 생성 시도`);
                 
                 try {
-                    // 세션 타입 매핑 (Flutter에서 온 값을 session-service 형식으로 변환)
-                    const sessionTypeMapping = {
-                        '발표': 'presentation',
-                        '소개팅': 'dating', 
-                        '면접': 'interview',
-                        '면접(인터뷰)': 'interview',
-                        '코칭': 'business',
-                        'presentation': 'presentation',
-                        'dating': 'dating',
-                        'interview': 'interview',
-                        'business': 'business'
-                    };
-                    
-                    const mappedType = sessionTypeMapping[sessionType] || 'dating';
-                    const title = sessionTitle || `${sessionType || '소개팅'} 세션`;
-                    
-                    // session-service에 세션 생성 요청
-                    const sessionData = await sessionApiService.createSession({
-                        id: sessionId, // 기존 sessionId 사용
-                        title: title,
-                        type: mappedType,
-                        user_id: user.id
-                    });
-                    
-                    logger.info(`세션 자동 생성 성공: ${sessionId}`, {
-                        userId: user.id,
-                        sessionType: mappedType,
-                        title: title
-                    });
-                    
-                    // 세션 생성 후 다시 유효성 검증
-                    isValid = true;
+                    // 먼저 세션이 이미 존재하는지 확인
+                    try {
+                        const existingSession = await sessionApiService.getSession(sessionId);
+                        if (existingSession) {
+                            logger.info(`세션 ${sessionId}가 이미 존재함, 재사용`, {
+                                userId: user.id,
+                                sessionStatus: existingSession.status
+                            });
+                            isValid = true;
+                        }
+                    } catch (getError) {
+                        // 세션이 없으면 새로 생성
+                        logger.debug(`세션 조회 실패, 새 세션 생성 진행: ${getError.message}`);
+                        
+                        // 세션 타입 매핑 (Flutter에서 온 값을 session-service 형식으로 변환)
+                        const sessionTypeMapping = {
+                            '발표': 'presentation',
+                            '소개팅': 'dating', 
+                            '면접': 'interview',
+                            '면접(인터뷰)': 'interview',
+                            '코칭': 'business',
+                            'presentation': 'presentation',
+                            'dating': 'dating',
+                            'interview': 'interview',
+                            'business': 'business'
+                        };
+                        
+                        const mappedType = sessionTypeMapping[sessionType] || 'dating';
+                        const title = sessionTitle || `${sessionType || '소개팅'} 세션`;
+                        
+                        // session-service에 세션 생성 요청
+                        const sessionData = await sessionApiService.createSession({
+                            id: sessionId, // 기존 sessionId 사용
+                            title: title,
+                            type: mappedType,
+                            user_id: user.id
+                        });
+                        
+                        logger.info(`세션 자동 생성 성공: ${sessionId}`, {
+                            userId: user.id,
+                            sessionType: mappedType,
+                            title: title
+                        });
+                        
+                        // 세션 생성 후 다시 유효성 검증
+                        isValid = true;
+                    }
                     
                 } catch (createError) {
                     logger.warn(`세션 자동 생성 실패: ${createError.message}`, {

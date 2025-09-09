@@ -61,19 +61,19 @@ const processSTTAnalysis = [
         .optional()
         .isObject().withMessage('음성 메트릭은 객체여야 합니다.'),
 
-    body('speechMetrics.evaluationWpm')
+    body('speechMetrics.evaluation_wpm')
         .optional()
         .isFloat({ min: 0, max: 1000 }).withMessage('말하기 속도(WPM)는 0~1000 사이의 숫자여야 합니다.'),
 
-    body('speechMetrics.pauseMetrics')
+    body('speechMetrics.pause_metrics')
         .optional()
         .isObject().withMessage('일시정지 메트릭은 객체여야 합니다.'),
 
-    body('speechMetrics.pauseMetrics.count')
+    body('speechMetrics.pause_metrics.count')
         .optional()
         .isInt({ min: 0 }).withMessage('일시정지 횟수는 0 이상의 정수여야 합니다.'),
 
-    body('speechMetrics.pauseMetrics.averageDuration')
+    body('speechMetrics.pause_metrics.average_duration')
         .optional()
         .isFloat({ min: 0 }).withMessage('평균 일시정지 지속시간은 0 이상의 숫자여야 합니다.'),
 

@@ -14,15 +14,20 @@ const Profile = sequelize.define('profile', {
         allowNull: true,
         comment: '사용자명'
     },
+    name: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        comment: '전체 이름 (한국식)'
+    },
     first_name: {
         type: DataTypes.STRING(100),
         allowNull: true,
-        comment: '이름'
+        comment: '이름 (서구식 - 호환성용)'
     },
     last_name: {
         type: DataTypes.STRING(100),
         allowNull: true,
-        comment: '성'
+        comment: '성 (서구식 - 호환성용)'
     },
     birth_date: {
         type: DataTypes.DATEONLY,

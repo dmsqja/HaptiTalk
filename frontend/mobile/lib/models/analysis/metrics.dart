@@ -18,7 +18,7 @@ class SessionMetrics {
 
   factory SessionMetrics.fromJson(Map<String, dynamic> json) {
     return SessionMetrics(
-      totalDuration: json['totalDuration'] as double,
+      totalDuration: (json['totalDuration'] as num).toDouble(),
       audioRecorded: json['audioRecorded'] as bool,
       speakingMetrics: SpeakingMetrics.fromJson(json['speakingMetrics']),
       emotionMetrics: EmotionMetrics.fromJson(json['emotionMetrics']),
@@ -73,9 +73,9 @@ class SpeakingMetrics {
 
   factory SpeakingMetrics.fromJson(Map<String, dynamic> json) {
     return SpeakingMetrics(
-      speechRate: json['speechRate'] as double,
-      tonality: json['tonality'] as double,
-      clarity: json['clarity'] as double,
+      speechRate: (json['speechRate'] as num).toDouble(),
+      tonality: (json['tonality'] as num).toDouble(),
+      clarity: (json['clarity'] as num).toDouble(),
       habitPatterns: (json['habitPatterns'] as List<dynamic>)
           .map((e) => HabitPattern.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -145,10 +145,10 @@ class EmotionMetrics {
 
   factory EmotionMetrics.fromJson(Map<String, dynamic> json) {
     return EmotionMetrics(
-      averageInterest: json['averageInterest'] as double,
-      averageLikeability: json['averageLikeability'] as double,
-      peakLikeability: json['peakLikeability'] as double,
-      lowestLikeability: json['lowestLikeability'] as double,
+      averageInterest: (json['averageInterest'] as num).toDouble(),
+      averageLikeability: (json['averageLikeability'] as num).toDouble(),
+      peakLikeability: (json['peakLikeability'] as num).toDouble(),
+      lowestLikeability: (json['lowestLikeability'] as num).toDouble(),
       feedbacks: (json['feedbacks'] as List<dynamic>)
           .map((e) => EmotionFeedback.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -207,9 +207,9 @@ class ConversationMetrics {
 
   factory ConversationMetrics.fromJson(Map<String, dynamic> json) {
     return ConversationMetrics(
-      contributionRatio: json['contributionRatio'] as double,
-      listeningScore: json['listeningScore'] as double,
-      interruptionCount: json['interruptionCount'] as double,
+      contributionRatio: (json['contributionRatio'] as num).toDouble(),
+      listeningScore: (json['listeningScore'] as num).toDouble(),
+      interruptionCount: (json['interruptionCount'] as num).toDouble(),
       flowDescription: json['flowDescription'] as String,
     );
   }
@@ -280,7 +280,7 @@ class ConversationTopic {
   factory ConversationTopic.fromJson(Map<String, dynamic> json) {
     return ConversationTopic(
       name: json['name'] as String,
-      percentage: json['percentage'] as double,
+      percentage: (json['percentage'] as num).toDouble(),
       isPrimary: json['isPrimary'] as bool? ?? false,
     );
   }
@@ -311,7 +311,7 @@ class TopicTimepoint {
   factory TopicTimepoint.fromJson(Map<String, dynamic> json) {
     return TopicTimepoint(
       time: json['time'] as String,
-      timestamp: json['timestamp'] as double,
+      timestamp: (json['timestamp'] as num).toDouble(),
       description: json['description'] as String,
       topics:
           (json['topics'] as List<dynamic>).map((e) => e as String).toList(),

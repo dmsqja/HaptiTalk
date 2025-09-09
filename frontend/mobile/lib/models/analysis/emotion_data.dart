@@ -13,9 +13,9 @@ class EmotionData {
 
   factory EmotionData.fromJson(Map<String, dynamic> json) {
     return EmotionData(
-      timestamp: json['timestamp'] as double,
+      timestamp: (json['timestamp'] as num).toDouble(),
       emotionType: json['emotionType'] as String,
-      value: json['value'] as double,
+      value: (json['value'] as num).toDouble(),
       description: json['description'] as String?,
     );
   }
@@ -51,9 +51,9 @@ class EmotionChangePoint {
   factory EmotionChangePoint.fromJson(Map<String, dynamic> json) {
     return EmotionChangePoint(
       time: json['time'] as String,
-      timestamp: json['timestamp'] as double,
+      timestamp: (json['timestamp'] as num).toDouble(),
       description: json['description'] as String,
-      emotionValue: json['emotionValue'] as double,
+      emotionValue: (json['emotionValue'] as num).toDouble(),
       label: json['label'] as String,
       topics: (json['topics'] as List<dynamic>?)
               ?.map((e) => e as String)

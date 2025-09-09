@@ -34,11 +34,11 @@ struct HapticFeedbackNotificationView: View {
                 HStack {
                     ZStack {
                         Capsule()
-                            .fill(Color.pink)
+                            .fill(Color(.sRGB, red: 0.25, green: 0.32, blue: 0.71, opacity: 1.0)) // #3F51B5 (앱 primaryColor와 일치)
                             .frame(width: 55, height: 20)
                         
                         HStack(spacing: 4) {
-                            Image(systemName: "heart.fill")
+                            Image(systemName: "person.3.fill")
                                 .font(.system(size: 8))
                             
                             Text(sessionType)

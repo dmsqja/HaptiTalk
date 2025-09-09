@@ -130,7 +130,7 @@ class HomeScreen extends StatelessWidget {
                   _buildNotificationItem(
                     icon: Icons.analytics,
                     title: '분석 완료',
-                    subtitle: '어제 소개팅 세션 분석이 완료되었습니다.',
+                    subtitle: '어제 발표 세션 분석이 완료되었습니다.',
                     time: '10분 전',
                     isNew: true,
                   ),
@@ -144,7 +144,7 @@ class HomeScreen extends StatelessWidget {
                   _buildNotificationItem(
                     icon: Icons.tips_and_updates,
                     title: '오늘의 팁',
-                    subtitle: '경청 기술 향상하기: 상대방의 말에 적절한 반응을...',
+                    subtitle: '발표 기술 향상하기: 청중과의 아이컨택과 제스처...',
                     time: '2시간 전',
                     isNew: false,
                   ),
@@ -564,6 +564,74 @@ class HomeScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
+                    '프로젝트 발표',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textColor,
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.lightGrayColor,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.record_voice_over,
+                          size: 14,
+                          color: AppColors.secondaryTextColor,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          '발표',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.secondaryTextColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 15),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildSessionStat(
+                    value: '25:40',
+                    label: '시간',
+                  ),
+                  _buildSessionStat(
+                    value: '88%',
+                    label: '명확성',
+                  ),
+                  _buildSessionStat(
+                    value: '92%',
+                    label: '설득력',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 15),
+              _buildProgressBar(0.9),
+            ],
+          ),
+        ),
+        // 소개팅 관련 카드 주석처리
+        /*
+        const SizedBox(height: 15),
+        BaseCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
                     '첫번째 소개팅',
                     style: TextStyle(
                       fontSize: 16,
@@ -621,6 +689,7 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
         ),
+        */
       ],
     );
   }
@@ -710,7 +779,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   const Text(
-                    '경청 기술 향상하기',
+                    '효과적인 발표 기법',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -721,7 +790,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               const Text(
-                '상대방의 이야기에 \'맞아요\', \'그렇군요\'와 같은\n짧은 반응을 추가하면 경청하고 있다는 신호를\n효과적으로 전달할 수 있습니다.',
+                '발표 중 청중과의 아이컨택을 유지하고,\n핵심 메시지를 3번 반복하면 기억에 남는\n임팩트 있는 발표를 할 수 있습니다.',
                 style: TextStyle(
                   fontSize: 14,
                   color: AppColors.secondaryTextColor,

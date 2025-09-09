@@ -153,28 +153,46 @@ services:
       - haptitalk_network
     restart: on-failure
 
-  # Kong API 게이트웨이 (DB-less 모드)
+  # Kong 설정 초기화 서비스
+  kong-init:
+    image: alpine:latest
+    container_name: haptitalk-kong-init
+    environment:
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_APP_KEY_ID: ${JWT_APP_KEY_ID}
+    volumes:
+      - ./infrastructure/api-gateway/kong.yml:/tmp/kong.yml.template:ro
+      - kong_config:/tmp/kong_config
+    command: >
+      sh -c '
+        apk add --no-cache gettext &&
+        echo "Kong 설정 파일 환경변수 치환 시작..." &&
+        envsubst < /tmp/kong.yml.template > /tmp/kong_config/kong.yml &&
+        echo "환경변수 치환 완료!" &&
+        echo "생성된 JWT 소비자 설정:" &&
+        grep -A 5 "jwt_secrets:" /tmp/kong_config/kong.yml
+      '
+    networks:
+      - haptitalk_network
+
+  # Kong API 게이트웨이 (환경변수 치환 적용)
   kong:
     image: kong:3.0
     container_name: haptitalk-kong
     restart: unless-stopped
+    depends_on:
+      - kong-init
     environment:
       KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /tmp/kong.yml
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: 0.0.0.0:8001
       KONG_PLUGINS: bundled
-      # JWT 관련 환경변수
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_APP_KEY_ID: ${JWT_APP_KEY_ID}
     volumes:
-      # 템플릿 파일을 컨테이너의 /tmp 디렉토리에 마운트
-      - ./infrastructure/api-gateway/kong.yml.template:/tmp/kong.yml.template
-      - ./infrastructure/api-gateway/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
-    command: ["/usr/local/bin/custom-entrypoint.sh"]
+      - kong_config:/usr/local/kong/declarative:ro
     ports:
       - "${KONG_PROXY_PORT}:8000"
       - "${KONG_HTTPS_PORT}:8443"
@@ -203,6 +221,301 @@ services:
       timeout: 5s
       retries: 5
 
+  # Elasticsearch - 로그 저장소
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: haptitalk-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kibana - 로그 시각화
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: haptitalk-kibana
+    restart: unless-stopped
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=haptitalk-kibana
+      - SERVER_HOST=0.0.0.0
+      - LOGGING_ROOT_LEVEL=info
+    depends_on:
+      - elasticsearch
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Logstash - 로그 처리 파이프라인
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.8.0
+    container_name: haptitalk-logstash
+    restart: unless-stopped
+    ports:
+      - "${LOGSTASH_BEATS_PORT:-5044}:5044"
+      - "${LOGSTASH_TCP_PORT:-5000}:5000"
+      - "${LOGSTASH_API_PORT:-9600}:9600"
+    environment:
+      - "LS_JAVA_OPTS=-Xms256m -Xmx256m"
+      - "xpack.monitoring.enabled=false"
+    command: >
+      bash -c '
+      echo "
+      input {
+        beats {
+          port => 5044
+        }
+        tcp {
+          port => 5000
+        }
+      }
+      output {
+        elasticsearch {
+          hosts => [\"elasticsearch:9200\"]
+          index => \"haptitalk-logs-%{+YYYY.MM.dd}\"
+        }
+      }
+      " > /usr/share/logstash/pipeline/logstash.conf &&
+      /usr/local/bin/docker-entrypoint
+      '
+    volumes:
+      - logstash_data:/usr/share/logstash/data
+    depends_on:
+      - elasticsearch
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9600"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Filebeat - 로그 수집
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.8.0
+    container_name: haptitalk-filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infrastructure/monitoring/elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+    command: ["filebeat", "-e", "-strict.perms=false", "-c", "/usr/share/filebeat/filebeat.yml"]
+    depends_on:
+      - logstash
+    networks:
+      - haptitalk_network
+
+  # Jaeger - 분산 추적
+  jaeger:
+    image: jaegertracing/all-in-one:1.45
+    container_name: haptitalk-jaeger
+    restart: unless-stopped
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"
+      - "${JAEGER_COLLECTOR_PORT:-14268}:14268"
+      - "${JAEGER_COLLECTOR_GRPC_PORT:-14250}:14250"
+      - "${JAEGER_AGENT_PORT:-6831}:6831/udp"
+      - "${JAEGER_OTLP_GRPC_PORT:-4317}:4317"
+      - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    volumes:
+      - jaeger_data:/tmp
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.80.0
+    container_name: haptitalk-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./infrastructure/monitoring/otel/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    ports:
+      - "${OTEL_COLLECTOR_PORT:-4318}:4318"
+      - "${OTEL_COLLECTOR_HTTP_PORT:-4319}:4319"
+      - "${OTEL_COLLECTOR_PROM_PORT:-8889}:8889"
+      - "${OTEL_COLLECTOR_ZPAGES_PORT:-55679}:55679"
+    depends_on:
+      - jaeger
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:55679/debug/servicez"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Prometheus - 메트릭 수집
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: haptitalk-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Grafana - 모니터링 대시보드
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: haptitalk-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3333}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Node Exporter - 시스템 메트릭
+  node-exporter:
+    image: prom/node-exporter:v1.5.0
+    container_name: haptitalk-node-exporter
+    restart: unless-stopped
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    networks:
+      - haptitalk_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9100/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Exporter
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: haptitalk-postgres-exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_URI=postgres:5432/${POSTGRES_DB}?sslmode=disable
+      - DATA_SOURCE_USER=${POSTGRES_USER}
+      - DATA_SOURCE_PASS=${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
+    networks:
+      - haptitalk_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9187/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: haptitalk-redis-exporter
+    restart: unless-stopped
+    command:
+      - '--redis.addr=redis:6379'
+      - '--redis.password=${REDIS_PASSWORD}'
+    ports:
+      - "${REDIS_EXPORTER_PORT:-9121}:9121"
+    networks:
+      - haptitalk_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9121/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MongoDB Exporter
+  mongodb-exporter:
+    image: bitnami/mongodb-exporter:0.40.0
+    container_name: haptitalk-mongodb-exporter
+    restart: unless-stopped
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/admin?authSource=admin
+      - MONGODB_USER=${MONGO_USER}
+      - MONGODB_PASSWORD=${MONGO_PASSWORD}
+    command:
+      - 'mongodb_exporter'
+      - '--mongodb.uri=${MONGODB_URI}'
+      - '--mongodb.user=${MONGODB_USER}'
+      - '--mongodb.password=${MONGO_PASSWORD}'
+      - '--collect-all'
+    ports:
+      - "${MONGODB_EXPORTER_PORT:-9216}:9216"
+    networks:
+      - haptitalk_network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9216/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # 인증 서비스
   auth-service:
     build:
@@ -227,6 +540,8 @@ services:
       - JWT_ACCESS_EXPIRES_IN=${JWT_ACCESS_EXPIRES_IN}
       - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN}
       - JWT_SESSION_EXPIRES_IN=${JWT_SESSION_EXPIRES_IN}
+      - JWT_APP_KEY_ID=${JWT_APP_KEY_ID}
+      - INTER_SERVICE_TOKEN=${INTER_SERVICE_TOKEN}
       - EMAIL_FROM=${EMAIL_FROM}
       - FRONTEND_URL=${FRONTEND_URL}
       - LOG_LEVEL=${LOG_LEVEL}
@@ -257,8 +572,8 @@ services:
   # 실시간 서비스
   realtime-service:
     build:
-      context: ./api/realtime-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./api/realtime-service/Dockerfile
     container_name: haptitalk-realtime-service
     restart: unless-stopped
     volumes:
@@ -275,7 +590,7 @@ services:
       - JWT_SESSION_SECRET=${JWT_SESSION_SECRET}
       - SESSION_SERVICE_URL=http://session-service:${SESSION_SERVICE_PORT}
       - FEEDBACK_SERVICE_URL=http://feedback-service:${FEEDBACK_SERVICE_PORT}
-      - INTER_SERVICE_TOKEN=${JWT_SERVICE_SECRET:-service-token-for-inter-service-communication}
+      - INTER_SERVICE_TOKEN=${INTER_SERVICE_TOKEN}
       - LOG_LEVEL=${LOG_LEVEL}
       # Kafka 설정
       - KAFKA_BROKERS=kafka:9092
@@ -301,8 +616,8 @@ services:
   # 세션 서비스
   session-service:
     build:
-      context: ./api/session-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./api/session-service/Dockerfile
     container_name: haptitalk-session-service
     restart: unless-stopped
     environment:
@@ -399,8 +714,8 @@ services:
   # 사용자 서비스
   user-service:
     build:
-      context: ./api/user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/user-service/Dockerfile
     container_name: haptitalk-user-service
     restart: unless-stopped
     environment:
@@ -415,6 +730,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - INTER_SERVICE_TOKEN=${INTER_SERVICE_TOKEN}
       - LOG_LEVEL=${LOG_LEVEL}
       # Kafka 설정
       - KAFKA_BROKERS=kafka:9092
@@ -464,6 +780,7 @@ services:
       - MONGO_HOST=mongodb
       - MONGO_PORT=27017
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - INTER_SERVICE_TOKEN=${INTER_SERVICE_TOKEN}
       - LOG_LEVEL=${LOG_LEVEL}
       # Kafka 설정
       - KAFKA_BROKERS=kafka:9092
@@ -495,7 +812,6 @@ networks:
   haptitalk_network:
     driver: bridge
     name: haptitalk_network
-    external: true
 
 volumes:
   postgres_data:
@@ -512,4 +828,16 @@ volumes:
     name: ${ZOOKEEPER_LOG_VOLUME_NAME:-zookeeper_log}
   kafka_data:
     name: ${KAFKA_VOLUME_NAME:-kafka_data}
+  kong_config:
+    name: kong_config
+  elasticsearch_data:
+    name: elasticsearch_data
+  logstash_data:
+    name: logstash_data
+  prometheus_data:
+    name: prometheus_data
+  grafana_data:
+    name: grafana_data
+  jaeger_data:
+    name: jaeger_data
     

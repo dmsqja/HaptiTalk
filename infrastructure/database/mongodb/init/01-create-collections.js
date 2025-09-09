@@ -24,6 +24,7 @@ db.createCollection("sessionAnalytics", {
     $jsonSchema: {
       bsonType: "object",
       required: ["sessionId", "userId", "sessionType", "createdAt"],
+      additionalProperties: true,
       properties: {
         sessionId: {
           bsonType: "string",

@@ -92,13 +92,13 @@ class AnalyticsCore {
       baseConfidence = 85.0 + ((speechDensity - 0.9) / 0.1) * 10.0; // 85-95
     }
     
-    // 말하기 속도 보정 (적절한 속도일 때 자신감 상승)
-    if (speechRate >= 120 && speechRate <= 160) {
-      baseConfidence *= 1.1; // 적절한 속도일 때 10% 보너스
-    } else if (speechRate > 180) {
-      baseConfidence *= 0.9; // 너무 빠르면 10% 감소
-    } else if (speechRate < 100) {
-      baseConfidence *= 0.95; // 너무 느리면 5% 감소
+    // 말하기 속도 보정 (한국어 기준 개선)
+    if (speechRate >= 100 && speechRate <= 180) {
+      baseConfidence *= 1.1; // 한국어 적절한 속도일 때 10% 보너스
+    } else if (speechRate > 200) {
+      baseConfidence *= 0.85; // 너무 빠르면 15% 감소
+    } else if (speechRate < 80) {
+      baseConfidence *= 0.9; // 너무 느리면 10% 감소
     }
     
     // 톤 품질 보정
@@ -108,48 +108,84 @@ class AnalyticsCore {
   }
 
   /**
-   * 설득력 계산 (발표용)
+   * 설득력 계산 (발표용) - 피드백 서비스와 통합된 계산법
    */
   static calculatePersuasion(speechData) {
     const tonality = speechData.tonality || 0.7;
     const clarity = speechData.clarity || 0.7;
     const speechPattern = speechData.speech_pattern || 'normal';
+    const evaluationWpm = speechData.evaluation_wpm || 120;
+    const speechDensity = speechData.speech_density || 0.5;
     
-    // 기본 설득력 (톤 + 명확성)
-    let basePersuasion = (tonality * 50 + clarity * 50);
+    let totalScore = 0;
+    let factorCount = 0;
     
-    // 말하기 패턴에 따른 조정
-    const patternBonus = {
-      'continuous': 10,
-      'steady': 8,
-      'normal': 0,
-      'variable': -3,
-      'staccato': -5,
-      'sparse': -8
-    };
+    // 1. 발화 밀도 (35%) - 충분한 발화량이 설득력에 중요
+    const densityScore = speechDensity <= 0.3 ? speechDensity / 0.3 * 0.6 :
+                        speechDensity <= 0.7 ? 0.6 + (speechDensity - 0.3) / 0.4 * 0.4 : 1.0;
+    totalScore += densityScore * 0.35;
+    factorCount += 0.35;
     
-    basePersuasion += (patternBonus[speechPattern] || 0);
+    // 2. 톤 품질 (25%)
+    totalScore += tonality * 0.25;
+    factorCount += 0.25;
     
-    return Math.max(20, Math.min(90, basePersuasion));
+    // 3. 말하기 속도 안정성 (20%) - 설득력에는 안정적 전달이 중요
+    const speedScore = evaluationWpm >= 110 && evaluationWpm <= 160 ? 1.0 :
+                      evaluationWpm >= 90 && evaluationWpm <= 180 ? 0.8 : 0.6;
+    totalScore += speedScore * 0.2;
+    factorCount += 0.2;
+    
+    // 4. 음성 패턴 안정성 (15%)
+    const patternScore = speechPattern === 'steady' ? 1.0 :
+                        speechPattern === 'normal' ? 0.9 :
+                        speechPattern === 'continuous' ? 0.8 : 0.6;
+    totalScore += patternScore * 0.15;
+    factorCount += 0.15;
+    
+    // 5. 명확성 기여도 (5%)
+    totalScore += clarity * 0.05;
+    factorCount += 0.05;
+    
+    const persuasionScore = factorCount > 0 ? (totalScore / factorCount) * 100 : 60; // 65→60 조정
+    return Math.max(25, Math.min(95, persuasionScore));
   }
 
   /**
-   * 명확성 계산
+   * 명확성 계산 - 피드백 서비스와 통합된 계산법
    */
   static calculateClarity(speechData) {
-    const clarity = speechData.clarity || 0.7;
+    const clarity = speechData.clarity || 0.65; // 0.7→0.65 조정
     const speechRate = speechData.evaluation_wpm || 120;
+    const speechPattern = speechData.speech_pattern || 'normal';
+    const tonality = speechData.tonality || 0.65; // 0.7→0.65 조정
     
-    let clarityScore = clarity * 100;
+    let totalScore = 0;
+    let factorCount = 0;
     
-    // 말하기 속도에 따른 명확성 조정
-    if (speechRate > 160) {
-      clarityScore *= 0.9; // 빠르면 명확성 감소
-    } else if (speechRate < 100) {
-      clarityScore *= 0.95; // 너무 느려도 약간 감소
-    }
+    // 1. 기본 명확성 지표 (40%)
+    totalScore += clarity * 0.4;
+    factorCount += 0.4;
     
-    return Math.max(20, Math.min(95, clarityScore));
+    // 2. 말하기 속도 적절성 (25%) - 명확성에는 적당한 속도가 중요
+    const speedScore = speechRate >= 100 && speechRate <= 150 ? 1.0 :
+                      speechRate >= 80 && speechRate <= 170 ? 0.8 : 0.6;
+    totalScore += speedScore * 0.25;
+    factorCount += 0.25;
+    
+    // 3. 음성 패턴 일관성 (20%)
+    const patternScore = speechPattern === 'normal' ? 1.0 : 
+                        speechPattern === 'steady' ? 0.9 : 
+                        speechPattern === 'continuous' ? 0.7 : 0.6;
+    totalScore += patternScore * 0.2;
+    factorCount += 0.2;
+    
+    // 4. 톤 품질 (15%) - 명확한 발음과 관련
+    totalScore += tonality * 0.15;
+    factorCount += 0.15;
+    
+    const clarityScore = factorCount > 0 ? (totalScore / factorCount) * 100 : 65;
+    return Math.max(25, Math.min(95, clarityScore));
   }
 
   /**

@@ -62,23 +62,39 @@ class SessionService {
             // MongoDB에도 세션 정보 저장
             try {
                 const sessionsCollection = await getCollection('sessions');
-                await sessionsCollection.insertOne({
+                const mongoDoc = {
                     sessionId: session.id,
                     userId: session.user_id,
                     title: session.title,
                     type: session.type,
                     status: session.status,
-                    startTime: session.start_time,
-                    endTime: session.end_time,
-                    duration: session.duration,
-                    settings: session.settings,
-                    metadata: session.metadata,
-                    createdAt: session.created_at,
-                    updatedAt: session.updated_at
-                });
+                    settings: session.settings || {},
+                    metadata: session.metadata || {},
+                    createdAt: session.created_at ? new Date(session.created_at) : new Date(),
+                    updatedAt: session.updated_at ? new Date(session.updated_at) : new Date()
+                };
+                
+                // null이 아닌 선택적 필드들만 추가
+                if (session.start_time) {
+                    mongoDoc.startTime = new Date(session.start_time);
+                }
+                if (session.end_time) {
+                    mongoDoc.endTime = new Date(session.end_time);
+                }
+                if (session.duration !== null && session.duration !== undefined) {
+                    mongoDoc.duration = session.duration;
+                }
+                
+                // MongoDB 저장 데이터 준비 완료
+                await sessionsCollection.insertOne(mongoDoc);
                 logger.info(`MongoDB에 세션 정보 저장 성공: ${session.id}`);
             } catch (mongoError) {
-                logger.warn(`MongoDB 세션 저장 실패: ${mongoError.message}`, { sessionId: session.id });
+                logger.error(`MongoDB 세션 저장 실패 (상세):`, {
+                    sessionId: session.id,
+                    error: mongoError.message,
+                    code: mongoError.code,
+                    writeErrors: mongoError.writeErrors || null
+                });
                 // MongoDB 저장 실패해도 PostgreSQL 세션은 유지
             }
 

@@ -30,10 +30,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _initializeServices() {
     try {
-      final apiService = ApiService.create();
-      _statsService = StatsService(apiService);
+      // AuthService에서 사용하는 API 서비스 인스턴스를 재사용
+      final authService = AuthService();
+      _statsService = StatsService(authService.apiService);
     } catch (e) {
       print('❌ 서비스 초기화 실패: $e');
+      // 실패 시 기본 API 서비스로 폴백
+      final apiService = ApiService.create();
+      _statsService = StatsService(apiService);
     }
   }
 

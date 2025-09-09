@@ -83,8 +83,8 @@ const sessionController = {
                 }
             );
 
-            // 사용자 권한 확인 (본인의 세션만 조회 가능)
-            if (session.user_id !== req.user.id) {
+            // 사용자 권한 확인 (본인의 세션만 조회 가능 - 서비스 요청 제외)
+            if (!req.isServiceRequest && session.user_id !== req.user.id) {
                 return res.status(httpStatus.FORBIDDEN).json({
                     success: false,
                     message: '이 세션에 접근할 권한이 없습니다.'
@@ -576,17 +576,16 @@ const sessionController = {
                     { operationName: 'get_session_status' }
                 );
                 
-                // 참가자 목록 조회 (회복성 패턴 적용)
-                const participants = await withMongoResilience(
-                    async () => sessionService.getSessionParticipants(id),
-                    { operationName: 'get_session_participants' }
-                );
+                // 개별 사용자 세션이므로 참가자는 세션 소유자만
+                const participants = [{
+                    userId: session.user_id,
+                    joinedAt: session.created_at,
+                    status: 'active',
+                    connected: true
+                }];
                 
-                // 최신 분석 결과 조회 (회복성 패턴 적용)
-                const latestAnalysis = await withMongoResilience(
-                    async () => sessionService.getLatestAnalysis(id),
-                    { operationName: 'get_latest_analysis' }
-                );
+                // 현재 실시간 분석 기능은 미구현 상태이므로 null 반환
+                const latestAnalysis = null;
                 
                 res.status(httpStatus.OK).json({
                     success: true,

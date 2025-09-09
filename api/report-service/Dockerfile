@@ -19,8 +19,13 @@ RUN sed -i 's/"chart.js": ".*",//g' package.json && \
 # 필수 패키지만 설치
 RUN npm install --production morgan prom-client express winston cors helmet jsonwebtoken ioredis pg sequelize
 
-# 공유 모듈 복사 (먼저)
+# 공유 모듈 복사 (auth-service 방식으로 통일)
 COPY api/shared /app/api/shared
+
+# 공유 모듈의 의존성 설치
+WORKDIR /app/api/shared/kafka-client
+RUN npm install
+WORKDIR /app
 
 # 소스 코드 복사
 COPY api/report-service .

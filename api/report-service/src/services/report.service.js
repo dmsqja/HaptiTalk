@@ -5,7 +5,7 @@ const PDFDocument = require('pdfkit');
 const mongodbService = require('./mongodb.service');
 const logger = require('../utils/logger');
 const chartsUtils = require('../utils/charts');
-const AnalyticsCore = require('../../../shared/analytics-core');
+const AnalyticsCore = require('../../api/shared/analytics-core');
 
 const reportService = {
     /**
@@ -424,18 +424,29 @@ const reportService = {
         const sessionSpecificMetrics = sessionAnalytics.sessionSpecificMetrics || {};
         const sessionType = sessionAnalytics.sessionType || 'dating';
 
-        // 공통 모듈을 사용하여 실제 분석 로직과 동일한 계산 수행
+        // 🔥 실제 STT 분석 결과를 우선 사용
+        const actualConfidence = statistics.confidenceScore * 100 || 60; // 0-1 → 0-100 변환
+        const actualSpeakingSpeed = summary.averageSpeakingSpeed || 120;
+        const actualSpeechQuality = statistics.speechPatternScore * 100 || 70;
+        const actualPauseStability = statistics.pauseStability * 100 || 80;
+        
+        // 🔥 실제 계산된 설득력과 명확성 점수 사용
+        const actualPersuasion = statistics.persuasionScore * 100 || 70;
+        const actualClarity = statistics.clarityScore * 100 || 70;
+
+        logger.info(`📊 실제 STT 기반 지표 사용: confidence=${actualConfidence.toFixed(1)}%, persuasion=${actualPersuasion.toFixed(1)}%, clarity=${actualClarity.toFixed(1)}%`);
+
+        // 백업용 공통 모듈 (실제 데이터가 없을 때만 사용)
         const speechData = {
             speech_density: statistics.speech_density || 0.5,
-            evaluation_wpm: summary.averageSpeakingSpeed || 120,
+            evaluation_wpm: actualSpeakingSpeed,
             tonality: statistics.tonality || 0.7,
-            clarity: statistics.clarity || 0.7,
+            clarity: actualClarity / 100,
             speech_pattern: statistics.speech_pattern || 'normal',
             emotion_score: emotionMetrics.overall_emotional_tone || 0.6,
             speed_category: statistics.speed_category || 'normal'
         };
 
-        // 공통 분석 모듈로 실제 지표 계산
         const calculatedMetrics = AnalyticsCore.calculateRealtimeMetrics(speechData, sessionType);
 
         // 시나리오별로 적절한 지표 반환
@@ -443,20 +454,20 @@ const reportService = {
             return {
                 speaking: {
                     ratio: parseFloat((summary.userSpeakingRatio || 0).toFixed(2)),
-                    speed: calculatedMetrics.speakingSpeed,
+                    speed: actualSpeakingSpeed,
                     words: summary.wordsCount || 0,
                     consistency: parseFloat((statistics.speaking_consistency || 0).toFixed(2)),
                     pauseStability: parseFloat((statistics.pause_stability || 0).toFixed(2)),
                     speechQuality: parseFloat((statistics.speech_pattern_score || 0).toFixed(2)),
-                    // 공통 모듈에서 계산된 실제 자신감 사용
-                    confidence: calculatedMetrics.confidence
+                    // 🔥 실제 STT 분석 결과 사용
+                    confidence: actualConfidence
                 },
                 
-                // 발표 전용 지표
+                // 🔥 발표 전용 지표 - 실제 계산값 사용
                 presentation: {
-                    confidence: calculatedMetrics.confidence,
-                    persuasion: calculatedMetrics.persuasion,
-                    clarity: calculatedMetrics.clarity
+                    confidence: actualConfidence,
+                    persuasion: actualPersuasion,
+                    clarity: actualClarity
                 },
                 
                 emotion: {
@@ -465,12 +476,12 @@ const reportService = {
                     variability: parseFloat((emotionMetrics.emotional_variability || 0.4).toFixed(2)),
                     primaryEmotions: emotionMetrics.primary_emotions || [],
                     happiness: parseFloat((emotionMetrics.happiness || 0.3).toFixed(2)),
-                    confidence: calculatedMetrics.confidence, // 실제 계산값 사용
+                    confidence: actualConfidence / 100, // 0-1 범위로 변환
                     calmness: parseFloat((emotionMetrics.calmness || 0.4).toFixed(2))
                 },
                 
                 sessionSpecific: sessionSpecificMetrics,
-                overallScore: Math.round((calculatedMetrics.confidence + calculatedMetrics.persuasion + calculatedMetrics.clarity) / 3),
+                overallScore: Math.round((actualConfidence + actualPersuasion + actualClarity) / 3),
                 
                 communication: {
                     interruptions: statistics.interruptions || 0,
@@ -479,36 +490,34 @@ const reportService = {
                 }
             };
         } else if (sessionType === 'interview') {
+            // 🔥 면접용 지표도 실제 계산값 사용
+            const interviewStability = emotionMetrics.emotional_stability * 100 || 70;
+            
             return {
                 speaking: {
                     ratio: parseFloat((summary.userSpeakingRatio || 0).toFixed(2)),
-                    speed: calculatedMetrics.speakingSpeed,
+                    speed: actualSpeakingSpeed,
                     words: summary.wordsCount || 0,
                     consistency: parseFloat((statistics.speaking_consistency || 0).toFixed(2)),
-                    pauseStability: parseFloat((statistics.pause_stability || 0).toFixed(2)),
-                    speechQuality: parseFloat((statistics.speech_pattern_score || 0).toFixed(2)),
-                    confidence: calculatedMetrics.confidence
+                    pauseStability: actualPauseStability,
+                    confidence: actualConfidence
                 },
                 
-                // 면접 전용 지표
                 interview: {
-                    confidence: calculatedMetrics.confidence,
-                    stability: calculatedMetrics.stability,
-                    clarity: calculatedMetrics.clarity
+                    confidence: actualConfidence,
+                    stability: interviewStability,
+                    clarity: actualClarity
                 },
                 
                 emotion: {
                     overallTone: parseFloat((emotionMetrics.overall_emotional_tone || 0.5).toFixed(2)),
                     stability: parseFloat((emotionMetrics.emotional_stability || 0.6).toFixed(2)),
-                    variability: parseFloat((emotionMetrics.emotional_variability || 0.4).toFixed(2)),
-                    primaryEmotions: emotionMetrics.primary_emotions || [],
-                    happiness: parseFloat((emotionMetrics.happiness || 0.3).toFixed(2)),
-                    confidence: calculatedMetrics.confidence,
+                    confidence: actualConfidence / 100,
                     calmness: parseFloat((emotionMetrics.calmness || 0.4).toFixed(2))
                 },
                 
                 sessionSpecific: sessionSpecificMetrics,
-                overallScore: Math.round((calculatedMetrics.confidence + calculatedMetrics.stability + calculatedMetrics.clarity) / 3),
+                overallScore: Math.round((actualConfidence + interviewStability + actualClarity) / 3),
                 
                 communication: {
                     interruptions: statistics.interruptions || 0,
@@ -517,23 +526,14 @@ const reportService = {
                 }
             };
         } else {
-            // 소개팅 (기본값)
+            // 소개팅 (기본값) - 실제 계산값 사용
             return {
                 speaking: {
                     ratio: parseFloat((summary.userSpeakingRatio || 0).toFixed(2)),
-                    speed: calculatedMetrics.speakingSpeed,
+                    speed: actualSpeakingSpeed,
                     words: summary.wordsCount || 0,
                     consistency: parseFloat((statistics.speaking_consistency || 0).toFixed(2)),
-                    pauseStability: parseFloat((statistics.pause_stability || 0).toFixed(2)),
-                    speechQuality: parseFloat((statistics.speech_pattern_score || 0).toFixed(2)),
-                    confidence: parseFloat((statistics.confidence_score || 0).toFixed(2)) // 소개팅은 기존 로직 유지
-                },
-                
-                // 소개팅 전용 지표
-                dating: {
-                    likeability: calculatedMetrics.likeability,
-                    interest: calculatedMetrics.interest,
-                    emotion: calculatedMetrics.emotion
+                    confidence: actualConfidence
                 },
                 
                 emotion: {
@@ -542,12 +542,12 @@ const reportService = {
                     variability: parseFloat((emotionMetrics.emotional_variability || 0.4).toFixed(2)),
                     primaryEmotions: emotionMetrics.primary_emotions || [],
                     happiness: parseFloat((emotionMetrics.happiness || 0.3).toFixed(2)),
-                    confidence: parseFloat((emotionMetrics.confidence || 0.3).toFixed(2)),
+                    confidence: actualConfidence / 100,
                     calmness: parseFloat((emotionMetrics.calmness || 0.4).toFixed(2))
                 },
                 
                 sessionSpecific: sessionSpecificMetrics,
-                overallScore: Math.round((calculatedMetrics.likeability + calculatedMetrics.interest) / 2),
+                overallScore: Math.round((actualConfidence + (emotionMetrics.overall_emotional_tone * 100 || 70)) / 2),
                 
                 communication: {
                     interruptions: statistics.interruptions || 0,

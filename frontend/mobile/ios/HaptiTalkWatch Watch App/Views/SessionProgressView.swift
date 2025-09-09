@@ -14,7 +14,7 @@ struct SessionProgressView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var appState: AppState
     @State private var sessionTimer: TimeInterval = 0
-    @State private var sessionMode: String = "소개팅"
+    @State private var sessionMode: String = "발표"
     @State private var formattedTime: String = "00:00:00"
     @State private var showHapticNotification: Bool = false
     @State private var hapticNotificationMessage: String = ""
@@ -25,17 +25,26 @@ struct SessionProgressView: View {
     
     // 햅틱 피드백 구독은 이제 AppState에서 관리됨
     
-    var recommendedTopics = ["여행 경험", "취미 활동", "좋아하는 음식"]
+    var recommendedTopics = ["핵심 포인트 강조", "시선 접촉", "목소리 강약", "자료 활용", "질의응답 준비"]
     
-    // AppState에서 실시간 데이터 가져오기
-    var emotionState: String { appState.currentEmotion }
-    var emotionColor: Color {
+    // AppState에서 실시간 데이터 가져오기 - 발표 위주로 변경
+    var confidenceState: String { 
+        // 감정 상태를 발표 자신감으로 매핑
         switch appState.currentEmotion {
-        case "긍정적": return Color.green
-        case "부정적": return Color.red
-        case "중립적": return Color.yellow
-        case "흥미로운": return Color.blue
-        case "집중적": return Color.purple
+        case "긍정적": return "높음"
+        case "부정적": return "낮음"
+        case "중립적": return "보통"
+        case "흥미로운": return "높음"
+        case "집중적": return "매우 높음"
+        default: return "보통"
+        }
+    }
+    var confidenceColor: Color {
+        switch confidenceState {
+        case "매우 높음": return Color.purple
+        case "높음": return Color.green
+        case "보통": return Color.yellow
+        case "낮음": return Color.red
         default: return Color.gray
         }
     }
@@ -47,7 +56,7 @@ struct SessionProgressView: View {
         if !appState.currentFeedback.isEmpty {
             return appState.currentFeedback
         } else {
-            return "여행 주제에서 높은 호감도를 보였으며, 경청하는 자세가 매우 효과적이었습니다."
+            return "핵심 메시지 전달이 명확했으며, 청중과의 소통이 매우 효과적이었습니다."
         }
     }
     
@@ -69,7 +78,7 @@ struct SessionProgressView: View {
             SessionSummaryView(
                 sessionMode: sessionMode + " 모드",
                 totalTime: formattedTime,
-                mainEmotion: emotionState,
+                mainEmotion: confidenceState,
                 likeabilityPercent: likeabilityPercent,
                 coreFeedback: coreFeedback
             )
@@ -115,6 +124,17 @@ struct SessionProgressView: View {
                 print("🎨 Watch: 시각적 피드백 종료")
             }
         }
+        .onChange(of: appState.shouldCloseSession) { _, shouldClose in
+            if shouldClose {
+                print("🔄 Watch: 세션 자동 종료 요청 감지, 화면 닫기")
+                presentationMode.wrappedValue.dismiss()
+                // 플래그 리셋
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    appState.shouldCloseSession = false
+                    print("🔄 Watch: 세션 종료 플래그 리셋 완료")
+                }
+            }
+        }
         .onAppear {
             initializeSession()
         }
@@ -158,7 +178,7 @@ struct SessionProgressView: View {
             id: UUID(),
             sessionMode: sessionMode + " 모드",
             totalTime: formattedTime,
-            mainEmotion: emotionState,
+            mainEmotion: confidenceState,
             likeabilityPercent: likeabilityPercent,
             coreFeedback: coreFeedback,
             date: Date()
@@ -210,13 +230,13 @@ struct SessionProgressView: View {
                 HStack {
                     ZStack {
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(.sRGB, red: 0.91, green: 0.12, blue: 0.39, opacity: 1.0)) // #E91E63
+                            .fill(Color(.sRGB, red: 0.25, green: 0.32, blue: 0.71, opacity: 1.0)) // #3F51B5 (앱 primaryColor와 일치)
                             .frame(width: 55, height: 21.5)
                         
                         HStack(spacing: 4) {
-                            Image(systemName: "heart.fill")
+                            Image(systemName: "person.3.fill")
                                 .resizable()
-                                .frame(width: 10, height: 10)
+                                .frame(width: 12, height: 8)
                                 .foregroundColor(.white)
                             
                             Text(sessionMode)
@@ -240,23 +260,23 @@ struct SessionProgressView: View {
                         .frame(height: 67)
                     
                     VStack(spacing: 8) {
-                        // 감정 상태
+                        // 발표 자신감
                         HStack {
-                            Text("감정 상태")
+                            Text("발표 자신감")
                                 .font(.system(size: 10))
                                 .foregroundColor(Color(.sRGB, red: 0.88, green: 0.88, blue: 0.88, opacity: 1.0)) // #E0E0E0
                             
                             Spacer()
                             
                             HStack(spacing: 4) {
-                                Image(systemName: "face.smiling.fill")
+                                Image(systemName: "chart.bar.fill")
                                     .resizable()
-                                    .frame(width: 12, height: 12)
-                                    .foregroundColor(emotionColor)
+                                    .frame(width: 12, height: 10)
+                                    .foregroundColor(confidenceColor)
                                 
-                                Text(emotionState)
+                                Text(confidenceState)
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(emotionColor)
+                                    .foregroundColor(confidenceColor)
                             }
                         }
                         
@@ -302,9 +322,9 @@ struct SessionProgressView: View {
                     .padding(.top, 10)
                 }
                 
-                // 추천 대화 주제
+                // 추천 발표 포인트
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("추천 대화 주제")
+                    Text("추천 발표 포인트")
                         .font(.system(size: 10))
                         .foregroundColor(Color(.sRGB, red: 0.62, green: 0.62, blue: 0.62, opacity: 1.0)) // #9E9E9E
                     

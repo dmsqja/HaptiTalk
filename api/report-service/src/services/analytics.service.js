@@ -15,6 +15,9 @@ const sanitizeData = (obj) => {
     if (typeof obj === 'number') {
         return sanitizeValue(obj);
     }
+    if (obj instanceof Date) {
+        return obj;
+    }
     if (Array.isArray(obj)) {
         return obj.map(sanitizeData);
     }
@@ -475,6 +478,9 @@ const calculateBasicStatistics = (segments) => {
         pauseStability: sanitizeValue(Math.max(0, 1 - averagePauseRatio * 5), 0.8), // 적절한 멈춤
         speechPatternScore: sanitizeValue(normalPatternRatio, 0.8),
         confidenceScore: calculateConfidenceScore(speechMetrics, validSegments),
+        // 🔥 실제 STT 기반 설득력과 명확성 추가
+        persuasionScore: calculatePersuasionScore(speechMetrics, validSegments),
+        clarityScore: calculateClarityScore(speechMetrics, validSegments),
         // 기존 지표들
         questionAnswerRatio: calculateQuestionAnswerRatio(validSegments),
         interruptions: calculateInterruptions(validSegments),
@@ -488,7 +494,10 @@ const calculateBasicStatistics = (segments) => {
  * 자신감 점수 계산 - STT의 다양한 지표를 종합
  */
 const calculateConfidenceScore = (speechMetrics, validSegments) => {
+    console.log('🔍 [calculateConfidenceScore] speechMetrics.length:', speechMetrics ? speechMetrics.length : 0);
+    console.log('🔍 [calculateConfidenceScore] validSegments.length:', validSegments ? validSegments.length : 0);
     if (!speechMetrics || speechMetrics.length === 0) {
+        console.log('⚠️ [calculateConfidenceScore] speechMetrics 없음, fallback 0.6 반환');
         return 0.6; // 기본값
     }
 
@@ -499,6 +508,7 @@ const calculateConfidenceScore = (speechMetrics, validSegments) => {
     const wpmValues = speechMetrics
         .map(m => m.evaluation_wpm)
         .filter(wpm => wpm && wpm > 0);
+    console.log('🔍 [calculateConfidenceScore] wpmValues:', wpmValues);
     
     if (wpmValues.length > 0) {
         const avgWpm = wpmValues.reduce((sum, wpm) => sum + wpm, 0) / wpmValues.length;
@@ -506,12 +516,14 @@ const calculateConfidenceScore = (speechMetrics, validSegments) => {
         const wpmStability = Math.max(0, 1 - (wpmVariance / (avgWpm * avgWpm))); // 변동계수의 역수
         totalScore += wpmStability * 0.25;
         factorCount += 0.25;
+        console.log('🔍 [calculateConfidenceScore] avgWpm:', avgWpm, 'wpmVariance:', wpmVariance, 'wpmStability:', wpmStability);
     }
 
     // 2. 멈춤 패턴 (pause_metrics 기반)
     const pauseMetrics = speechMetrics
         .map(m => m.pause_metrics)
         .filter(p => p);
+    console.log('🔍 [calculateConfidenceScore] pauseMetrics:', pauseMetrics);
     
     if (pauseMetrics.length > 0) {
         const avgPauseRatio = pauseMetrics.reduce((sum, p) => sum + (p.pause_ratio || 0), 0) / pauseMetrics.length;
@@ -519,28 +531,33 @@ const calculateConfidenceScore = (speechMetrics, validSegments) => {
         const pauseScore = avgPauseRatio >= 0.1 && avgPauseRatio <= 0.2 ? 1.0 : Math.max(0, 1 - Math.abs(avgPauseRatio - 0.15) * 5);
         totalScore += pauseScore * 0.2;
         factorCount += 0.2;
+        console.log('🔍 [calculateConfidenceScore] avgPauseRatio:', avgPauseRatio, 'pauseScore:', pauseScore);
     }
 
     // 3. 음성 패턴 정상성 (speech_pattern 기반)
     const speechPatterns = speechMetrics
         .map(m => m.speech_pattern)
         .filter(pattern => pattern);
+    console.log('🔍 [calculateConfidenceScore] speechPatterns:', speechPatterns);
     
     if (speechPatterns.length > 0) {
         const normalPatternRatio = speechPatterns.filter(p => p === 'normal').length / speechPatterns.length;
         totalScore += normalPatternRatio * 0.2;
         factorCount += 0.2;
+        console.log('🔍 [calculateConfidenceScore] normalPatternRatio:', normalPatternRatio);
     }
 
     // 4. 발화 연속성 (speed_category 기반)
     const speedCategories = speechMetrics
         .map(m => m.speed_category)
         .filter(cat => cat);
+    console.log('🔍 [calculateConfidenceScore] speedCategories:', speedCategories);
     
     if (speedCategories.length > 0) {
         const normalSpeedRatio = speedCategories.filter(cat => cat === 'normal').length / speedCategories.length;
         totalScore += normalSpeedRatio * 0.15;
         factorCount += 0.15;
+        console.log('🔍 [calculateConfidenceScore] normalSpeedRatio:', normalSpeedRatio);
     }
 
     // 5. 전체 발화량 (많을수록 자신감 있음)
@@ -548,14 +565,178 @@ const calculateConfidenceScore = (speechMetrics, validSegments) => {
         const text = s.sttData?.text || s.transcription || '';
         return text.trim().length > 10; // 의미있는 발화
     }).length;
-    
     const speechVolumeScore = Math.min(1.0, totalSpeechSegments / 10); // 10개 이상이면 만점
     totalScore += speechVolumeScore * 0.2;
     factorCount += 0.2;
+    console.log('🔍 [calculateConfidenceScore] totalSpeechSegments:', totalSpeechSegments, 'speechVolumeScore:', speechVolumeScore);
 
     // 가중평균 계산
     const confidenceScore = factorCount > 0 ? totalScore / factorCount : 0.6;
+    console.log('✅ [calculateConfidenceScore] 최종 confidenceScore:', confidenceScore, '(factorCount:', factorCount, ')');
     return sanitizeValue(confidenceScore, 0.6);
+};
+
+/**
+ * 설득력 점수 계산 - STT 데이터 기반
+ */
+const calculatePersuasionScore = (speechMetrics, validSegments) => {
+    if (!speechMetrics || speechMetrics.length === 0) {
+        return 0.65; // 기본값
+    }
+
+    let totalScore = 0;
+    let factorCount = 0;
+
+    // 전체 텍스트 결합
+    const fullText = validSegments
+        .map(s => s.transcription || s.sttData?.text || '')
+        .join(' ')
+        .toLowerCase();
+
+    // 1. 논리적 구조 키워드 (35%)
+    const structureWords = ['첫째', '둘째', '셋째', '마지막으로', '결론적으로', '요약하면', '핵심은', '중요한'];
+    const structureCount = structureWords.reduce((count, word) => {
+        const regex = new RegExp(word, 'g');
+        const matches = fullText.match(regex);
+        return count + (matches ? matches.length : 0);
+    }, 0);
+    const structureScore = Math.min(1.0, structureCount / 3); // 3개 이상이면 만점
+    totalScore += structureScore * 0.35;
+    factorCount += 0.35;
+
+    // 2. 설득 키워드 (30%)
+    const persuasionWords = ['장점', '이익', '효과', '결과', '성과', '가치', '개선', '해결', '도움'];
+    const persuasionCount = persuasionWords.reduce((count, word) => {
+        const regex = new RegExp(word, 'g');
+        const matches = fullText.match(regex);
+        return count + (matches ? matches.length : 0);
+    }, 0);
+    const persuasionKeywordScore = Math.min(1.0, persuasionCount / 4); // 4개 이상이면 만점
+    totalScore += persuasionKeywordScore * 0.3;
+    factorCount += 0.3;
+
+    // 3. 말하기 일관성 (20%) - 설득력은 일관된 전달이 중요
+    const wpmValues = speechMetrics
+        .map(m => m.evaluation_wpm)
+        .filter(wpm => wpm && wpm > 0);
+    
+    if (wpmValues.length > 1) {
+        const avgWpm = wpmValues.reduce((sum, wpm) => sum + wpm, 0) / wpmValues.length;
+        const wpmVariance = wpmValues.reduce((sum, wpm) => sum + Math.pow(wpm - avgWpm, 2), 0) / wpmValues.length;
+        const wpmCV = avgWpm > 0 ? Math.sqrt(wpmVariance) / avgWpm : 0;
+        const consistencyScore = Math.max(0, 1 - wpmCV); // 변동계수가 낮을수록 좋음
+        totalScore += consistencyScore * 0.2;
+        factorCount += 0.2;
+    }
+
+    // 4. 적절한 발화 속도 (15%) - 설득력에는 안정적인 속도가 중요
+    if (wpmValues.length > 0) {
+        const avgWpm = wpmValues.reduce((sum, wpm) => sum + wpm, 0) / wpmValues.length;
+        const speedScore = avgWpm >= 110 && avgWpm <= 160 ? 1.0 : // 설득에 적합한 속도
+                         avgWpm >= 90 && avgWpm <= 180 ? 0.8 : 0.6;
+        totalScore += speedScore * 0.15;
+        factorCount += 0.15;
+    }
+
+    // 가중평균 계산
+    const persuasionScore = factorCount > 0 ? totalScore / factorCount : 0.65;
+    return sanitizeValue(persuasionScore, 0.65);
+};
+
+/**
+ * 명확성 점수 계산 - STT 데이터 기반
+ */
+const calculateClarityScore = (speechMetrics, validSegments) => {
+    if (!speechMetrics || speechMetrics.length === 0) {
+        return 0.7; // 기본값
+    }
+
+    let totalScore = 0;
+    let factorCount = 0;
+
+    // 전체 텍스트 결합
+    const fullText = validSegments
+        .map(s => s.transcription || s.sttData?.text || '')
+        .join(' ');
+
+    // 1. 단어 확신도 (30%) - 명확한 발음일수록 인식률 높음
+    const allWords = validSegments
+        .flatMap(s => s.sttData?.words || [])
+        .filter(w => w.probability !== undefined);
+
+    if (allWords.length > 0) {
+        const avgProbability = allWords.reduce((sum, w) => sum + w.probability, 0) / allWords.length;
+        totalScore += avgProbability * 0.3;
+        factorCount += 0.3;
+    }
+
+    // 2. 멈춤의 적절성 (25%) - 명확성에는 적절한 휴지가 중요
+    const pauseMetrics = speechMetrics
+        .map(m => m.pause_metrics)
+        .filter(p => p);
+
+    if (pauseMetrics.length > 0) {
+        const avgPauseRatio = pauseMetrics.reduce((sum, p) => sum + (p.pause_ratio || 0), 0) / pauseMetrics.length;
+        const avgPauseDuration = pauseMetrics.reduce((sum, p) => sum + (p.average_duration || 0), 0) / pauseMetrics.length;
+        
+        // 적절한 멈춤 비율 (0.1-0.2)과 적절한 길이 (0.3-1.0초)
+        const ratioScore = avgPauseRatio >= 0.1 && avgPauseRatio <= 0.2 ? 1.0 : 
+                          Math.max(0, 1 - Math.abs(avgPauseRatio - 0.15) * 5);
+        const durationScore = avgPauseDuration >= 0.3 && avgPauseDuration <= 1.0 ? 1.0 :
+                             Math.max(0, 1 - Math.abs(avgPauseDuration - 0.65) * 2);
+        
+        const pauseScore = (ratioScore + durationScore) / 2;
+        totalScore += pauseScore * 0.25;
+        factorCount += 0.25;
+    }
+
+    // 3. 말하기 속도 (20%) - 명확성에는 적당한 속도가 중요
+    const wpmValues = speechMetrics
+        .map(m => m.evaluation_wpm)
+        .filter(wpm => wpm && wpm > 0);
+
+    if (wpmValues.length > 0) {
+        const avgWpm = wpmValues.reduce((sum, wpm) => sum + wpm, 0) / wpmValues.length;
+        // 명확성에 최적인 속도: 100-150 WPM
+        const speedScore = avgWpm >= 100 && avgWpm <= 150 ? 1.0 :
+                         avgWpm >= 80 && avgWpm <= 170 ? 0.8 : 0.6;
+        totalScore += speedScore * 0.2;
+        factorCount += 0.2;
+    }
+
+    // 4. 필러워드 비율 (15%) - 명확성에는 필러워드가 적어야 함
+    if (fullText) {
+        const fillerWords = ['음', '어', '아', '그', '뭐', '좀'];
+        const textWords = fullText.split(/\s+/).filter(word => word.length > 0);
+        let fillerCount = 0;
+        
+        fillerWords.forEach(filler => {
+            const regex = new RegExp(filler, 'g');
+            const matches = fullText.match(regex);
+            if (matches) fillerCount += matches.length;
+        });
+        
+        const fillerRatio = textWords.length > 0 ? fillerCount / textWords.length : 0;
+        const fillerScore = Math.max(0, 1 - fillerRatio * 5); // 필러워드가 적을수록 좋음
+        totalScore += fillerScore * 0.15;
+        factorCount += 0.15;
+    }
+
+    // 5. 음성 패턴 (10%)
+    const speechPatterns = speechMetrics
+        .map(m => m.speech_pattern)
+        .filter(pattern => pattern);
+
+    if (speechPatterns.length > 0) {
+        const normalPatternRatio = speechPatterns.filter(p => p === 'normal').length / speechPatterns.length;
+        const patternScore = normalPatternRatio;
+        totalScore += patternScore * 0.1;
+        factorCount += 0.1;
+    }
+
+    // 가중평균 계산
+    const clarityScore = factorCount > 0 ? totalScore / factorCount : 0.7;
+    return sanitizeValue(clarityScore, 0.7);
 };
 
 /**
@@ -1576,52 +1757,63 @@ const generateSessionSpecificMetrics = (sessionType, statistics, emotionAnalysis
     
     switch (sessionType) {
         case 'presentation':
+            // 공통 분석 모듈 사용으로 피드백 서비스와 일관성 확보
+            const presentationSpeechData = {
+                speech_density: validSegments.length > 0 ? validSegments.length / 10 : 0.5, // 세그먼트 기반 발화 밀도
+                evaluation_wpm: statistics.averageSpeakingSpeed,
+                tonality: emotionAnalysis.overall_emotional_tone || 0.7,
+                clarity: statistics.pauseStability || 0.7,
+                speech_pattern: statistics.speechPatternScore > 0.8 ? 'normal' : 'variable'
+            };
+            
+            const presentationMetrics = require('../../shared/analytics-core').calculatePresentationMetrics(presentationSpeechData);
+            
             return {
-                발표자신감: sanitizeValue(statistics.confidenceScore, 0.6),
-                설득력: sanitizeValue(
-                    (statistics.speakingConsistency * 0.4 + 
-                     statistics.speechPatternScore * 0.3 + 
-                     emotionAnalysis.confidence * 0.3), 0.65
-                ),
-                명확성: sanitizeValue(
-                    (statistics.pauseStability * 0.5 + 
-                     statistics.speakingConsistency * 0.3 + 
-                     (statistics.averageSpeakingSpeed >= 100 && statistics.averageSpeakingSpeed <= 150 ? 1.0 : 0.7) * 0.2), 0.7
-                )
+                발표자신감: sanitizeValue(presentationMetrics.confidence / 100, 0.6),
+                설득력: sanitizeValue(presentationMetrics.persuasion / 100, 0.65),
+                명확성: sanitizeValue(presentationMetrics.clarity / 100, 0.7)
             };
             
         case 'interview':
+            // 공통 분석 모듈 사용으로 피드백 서비스와 일관성 확보
+            const interviewSpeechData = {
+                speech_density: validSegments.length > 0 ? validSegments.length / 10 : 0.5,
+                evaluation_wpm: statistics.averageSpeakingSpeed,
+                tonality: emotionAnalysis.overall_emotional_tone || 0.7,
+                clarity: statistics.pauseStability || 0.7,
+                speech_pattern: statistics.speechPatternScore > 0.8 ? 'normal' : 'variable',
+                emotion_score: emotionAnalysis.emotional_stability || 0.6
+            };
+            
+            const interviewMetrics = require('../../shared/analytics-core').calculateInterviewMetrics(interviewSpeechData);
+            
             return {
-                자신감: sanitizeValue(statistics.confidenceScore, 0.6),
-                명확성: sanitizeValue(
-                    (statistics.pauseStability * 0.4 + 
-                     statistics.speechPatternScore * 0.4 + 
-                     (statistics.averageSpeakingSpeed >= 90 && statistics.averageSpeakingSpeed <= 140 ? 1.0 : 0.6) * 0.2), 0.65
-                ),
-                안정감: sanitizeValue(
-                    (emotionAnalysis.emotional_stability * 0.4 + 
-                     statistics.speakingConsistency * 0.3 + 
-                     emotionAnalysis.calmness * 0.3), 0.7
-                )
+                자신감: sanitizeValue(interviewMetrics.confidence / 100, 0.6),
+                명확성: sanitizeValue(interviewMetrics.clarity / 100, 0.65),
+                안정감: sanitizeValue(interviewMetrics.stability / 100, 0.7)
             };
             
         case 'dating':
+            // 공통 분석 모듈 사용으로 피드백 서비스와 일관성 확보
+            const datingSpeechData = {
+                speech_density: validSegments.length > 0 ? validSegments.length / 10 : 0.5,
+                evaluation_wpm: statistics.averageSpeakingSpeed,
+                tonality: emotionAnalysis.overall_emotional_tone || 0.7,
+                clarity: statistics.pauseStability || 0.7,
+                speech_pattern: statistics.speechPatternScore > 0.8 ? 'normal' : 'variable',
+                emotion_score: emotionAnalysis.happiness || 0.6
+            };
+            
+            const datingMetrics = require('../../shared/analytics-core').calculateDatingMetrics(datingSpeechData);
+            
             return {
-                호감도: sanitizeValue(
-                    (emotionAnalysis.happiness * 0.4 + 
-                     emotionAnalysis.overall_emotional_tone * 0.3 + 
-                     statistics.confidenceScore * 0.3), 0.6
-                ),
+                호감도: sanitizeValue(datingMetrics.likeability / 100, 0.6),
                 경청지수: sanitizeValue(
                     (statistics.pauseStability * 0.4 + 
-                     (1 - statistics.speakingRatio) * 0.3 + // 말하기 비율이 낮을수록 경청 잘함
+                     (1 - statistics.speakingRatio) * 0.3 + 
                      statistics.questionAnswerRatio * 0.3), 0.65
                 ),
-                톤억양: sanitizeValue(
-                    (statistics.speechPatternScore * 0.5 + 
-                     emotionAnalysis.emotional_variability * 0.3 + 
-                     (1 - Math.abs(statistics.averageSpeakingSpeed - 120) / 120) * 0.2), 0.7
-                )
+                톤억양: sanitizeValue(datingMetrics.emotion || 0.7, 0.7)
             };
             
         default:

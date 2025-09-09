@@ -16,7 +16,8 @@ const tokenService = {
             const tokenPayload = {
                 sub: user.id,
                 email: user.email,
-                type: 'access'
+                type: 'access',
+                kid: process.env.JWT_APP_KEY_ID
             };
 
             const refreshTokenId = uuidv4();

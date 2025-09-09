@@ -35,6 +35,10 @@ const authValidation = {
             .isLength({min: 8}).withMessage('Password must be at least 8 characters long')
             .matches(/\d/).withMessage('Password must contain at least one number')
             .matches(/[a-zA-Z]/).withMessage('Password must contain at least one letter'),
+        body('username')
+            .optional()
+            .isLength({min: 2, max: 50}).withMessage('Username must be between 2-50 characters')
+            .trim(),
         body('device_info')
             .optional()
             .isObject().withMessage('Device info must be an object')

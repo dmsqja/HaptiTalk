@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS auth.users (
 CREATE TABLE IF NOT EXISTS users.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     username VARCHAR(50) UNIQUE,
+    name VARCHAR(100),           -- 한국어 이름용 통합 필드
     first_name VARCHAR(100),
     last_name VARCHAR(100),
     birth_date DATE,

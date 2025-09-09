@@ -261,7 +261,7 @@ class Session {
       id: json['id'] as String,
       title: json['title'] as String,
       date: DateTime.parse(json['date'] as String),
-      duration: json['duration'] as double,
+      duration: (json['duration'] as num).toDouble(),
       category: json['category'] as String,
       tags: (json['tags'] as List<dynamic>?)
               ?.map((e) => SessionTag.fromJson(e as Map<String, dynamic>))

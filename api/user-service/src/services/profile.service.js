@@ -86,19 +86,32 @@ class ProfileService {
     /**
      * 기본 프로필 생성
      * @param {string} userId - 사용자 ID
+     * @param {string} username - 사용자명 (선택사항)
      * @returns {Promise<Object>} - 생성된 프로필
      */
-    async createDefaultProfile(userId) {
+    async createDefaultProfile(userId, username = null) {
         try {
-            const profile = await Profile.create({
-                id: userId
-            });
+            const profileData = { id: userId };
+            
+            // username이 제공된 경우 추가
+            if (username && username.trim()) {
+                profileData.username = username.trim();
+                
+                // 한국식 이름: username을 name 필드에 저장
+                profileData.name = username.trim();
+                
+                // 호환성을 위해 first_name에도 저장 (기존 시스템과의 호환성)
+                profileData.first_name = username.trim();
+            }
 
-            logger.info(`기본 프로필 생성 성공: ${userId}`);
+            const profile = await Profile.create(profileData);
+
+            logger.info(`기본 프로필 생성 성공: ${userId} (name: ${username || 'none'})`);
 
             // Kafka 이벤트 발행
             await kafkaService.publishUserActivity(userId, 'PROFILE_CREATED', {
-                type: 'default'
+                type: 'default',
+                name: username || null
             });
 
             // Redis에 캐싱 (1시간)

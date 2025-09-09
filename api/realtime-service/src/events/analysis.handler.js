@@ -1,5 +1,5 @@
 const logger = require('../utils/logger');
-const AnalyticsCore = require('../../../shared/analytics-core');
+const AnalyticsCore = require('../../api/shared/analytics-core');
 
 // 이전 지표 저장용 메모리 캐시
 const previousMetricsCache = new Map();

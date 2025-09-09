@@ -830,20 +830,62 @@ class SessionDetailTabTopics extends StatelessWidget {
 
   // 세션별 분석 텍스트들
   String _getPresentationConfidenceAnalysis() {
-    final likeability = analysisResult.metrics.emotionMetrics.averageLikeability;
+    // 🔥 백엔드에서 이미 계산된 값 우선 사용
+    final rawApiData = analysisResult.rawApiData;
+    double confidence = 0;
+    
+    if (rawApiData.isNotEmpty && rawApiData['keyMetrics'] != null) {
+      final keyMetrics = rawApiData['keyMetrics'] as Map<String, dynamic>;
+      final presentationMetrics = keyMetrics['presentation'] as Map<String, dynamic>?;
+      
+      if (presentationMetrics != null && presentationMetrics['confidence'] != null) {
+        confidence = (presentationMetrics['confidence'] as num).toDouble();
+        print('📊 발표 자신감 분석: 백엔드 계산값 사용 ($confidence%) - keyMetrics.presentation.confidence');
+      } else {
+        // 폴백
+        confidence = analysisResult.metrics.emotionMetrics.averageLikeability;
+        print('📊 발표 자신감 분석: 폴백 계산값 사용 ($confidence%)');
+      }
+    } else {
+      // 폴백
+      confidence = analysisResult.metrics.emotionMetrics.averageLikeability;
+      print('📊 발표 자신감 분석: 폴백 계산값 사용 ($confidence%)');
+    }
+    
     final speechRate = analysisResult.metrics.speakingMetrics.speechRate;
     final clarity = analysisResult.metrics.speakingMetrics.clarity;
     
-    if (likeability >= 70) {
+    if (confidence >= 70) {
       return '발표 중 높은 자신감을 보였습니다. 안정적인 말하기 속도(${speechRate.toInt()}WPM)와 명확한 전달력(${clarity.toInt()}%)으로 메시지 전달이 효과적이었습니다. 확신 있는 표현과 명확한 구조화가 인상적이었습니다.';
-    } else if (likeability >= 50) {
+    } else if (confidence >= 50) {
       return '기본적인 발표 자신감은 갖추었으나, 더 확신 있는 어조와 제스처를 사용하면 설득력을 높일 수 있습니다. 핵심 포인트에서 목소리 톤 강조를 활용해보세요.';
     }
     return '발표 자신감 향상이 필요합니다. 충분한 준비와 연습을 통해 확신을 가지고 발표해보세요. 말하기 속도를 조절하고 중요한 내용에서 강조 톤을 사용하면 도움이 됩니다.';
   }
 
   String _getPresentationEffectivenessAnalysis() {
-    final clarity = analysisResult.metrics.speakingMetrics.clarity;
+    // 🔥 백엔드에서 이미 계산된 값 우선 사용
+    final rawApiData = analysisResult.rawApiData;
+    double clarity = 0;
+    
+    if (rawApiData.isNotEmpty && rawApiData['keyMetrics'] != null) {
+      final keyMetrics = rawApiData['keyMetrics'] as Map<String, dynamic>;
+      final presentationMetrics = keyMetrics['presentation'] as Map<String, dynamic>?;
+      
+      if (presentationMetrics != null && presentationMetrics['clarity'] != null) {
+        clarity = (presentationMetrics['clarity'] as num).toDouble();
+        print('📊 전달 효과성 분석: 백엔드 계산값 사용 ($clarity%) - keyMetrics.presentation.clarity');
+      } else {
+        // 폴백
+        clarity = analysisResult.metrics.speakingMetrics.clarity;
+        print('📊 전달 효과성 분석: 폴백 계산값 사용 ($clarity%)');
+      }
+    } else {
+      // 폴백
+      clarity = analysisResult.metrics.speakingMetrics.clarity;
+      print('📊 전달 효과성 분석: 폴백 계산값 사용 ($clarity%)');
+    }
+    
     if (clarity >= 80) {
       return '핵심 메시지가 명확하게 전달되었습니다. 체계적인 구성과 적절한 예시로 이해도를 높였습니다.';
     } else if (clarity >= 60) {
@@ -853,7 +895,28 @@ class SessionDetailTabTopics extends StatelessWidget {
   }
 
   String _getInterviewStrengthAnalysis() {
-    final confidence = analysisResult.metrics.emotionMetrics.averageLikeability;
+    // 🔥 백엔드에서 이미 계산된 값 우선 사용 (면접용)
+    final rawApiData = analysisResult.rawApiData;
+    double confidence = 0;
+    
+    if (rawApiData.isNotEmpty && rawApiData['keyMetrics'] != null) {
+      final keyMetrics = rawApiData['keyMetrics'] as Map<String, dynamic>;
+      final interviewMetrics = keyMetrics['interview'] as Map<String, dynamic>?;
+      
+      if (interviewMetrics != null && interviewMetrics['confidence'] != null) {
+        confidence = (interviewMetrics['confidence'] as num).toDouble();
+        print('📊 면접 강점 분석: 백엔드 계산값 사용 ($confidence%) - keyMetrics.interview.confidence');
+      } else {
+        // 폴백
+        confidence = analysisResult.metrics.emotionMetrics.averageLikeability;
+        print('📊 면접 강점 분석: 폴백 계산값 사용 ($confidence%)');
+      }
+    } else {
+      // 폴백
+      confidence = analysisResult.metrics.emotionMetrics.averageLikeability;
+      print('📊 면접 강점 분석: 폴백 계산값 사용 ($confidence%)');
+    }
+    
     if (confidence >= 70) {
       return '자신감 있는 답변과 구체적인 경험 공유로 좋은 인상을 남겼습니다. 논리적 구조와 명확한 표현이 강점입니다.';
     } else if (confidence >= 50) {

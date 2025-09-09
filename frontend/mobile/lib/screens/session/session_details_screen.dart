@@ -123,25 +123,34 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen>
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 0.5,
+        elevation: 0,
+        centerTitle: true,
         title: Text(
           '세션 상세',
           style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w600,
+            color: Color(0xFF212121),
             fontSize: 18,
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w600,
           ),
         ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.black87, size: 20),
-          onPressed: () => Navigator.pop(context),
+        leading: Container(
+          padding: EdgeInsets.all(5),
+          child: Container(width: 24, height: 24, child: Stack()),
         ),
         actions: [
-          IconButton(
-            icon: Icon(Icons.share, color: Colors.black87),
-            onPressed: _shareSession,
+          Container(
+            padding: EdgeInsets.all(5),
+            child: Container(width: 22, height: 22, child: Stack()),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: Color(0xFFF0F0F0),
+          ),
+        ),
       ),
       backgroundColor: Colors.white,
       body: FutureBuilder<AnalysisResult>(
@@ -194,29 +203,33 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen>
                 onPlayAudio: _toggleAudioPlayback,
               ),
 
-              // 탭 바 (동적으로 구성)
+              // 탭 바 (Figma 디자인)
               Container(
+                padding: EdgeInsets.only(bottom: 1),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   border: Border(
-                    top: BorderSide(color: Color(0xFFF0F0F0)),
-                    bottom: BorderSide(color: Color(0xFFF0F0F0)),
+                    bottom: BorderSide(width: 1, color: Color(0xFFF0F0F0)),
                   ),
                 ),
                 child: TabBar(
                   controller: _tabController,
-                  labelColor: AppColors.primary,
+                  labelColor: Color(0xFF3F51B5),
                   unselectedLabelColor: Color(0xFF757575),
-                  indicatorColor: AppColors.primary,
+                  indicatorColor: Color(0xFF3F51B5),
                   indicatorWeight: 3,
-                  indicatorSize: TabBarIndicatorSize.label,
+                  indicatorSize: TabBarIndicatorSize.tab,
                   labelStyle: TextStyle(
-                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF3F51B5),
                     fontSize: 14,
+                    fontFamily: 'Roboto',
+                    fontWeight: FontWeight.w600,
                   ),
                   unselectedLabelStyle: TextStyle(
-                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF757575),
                     fontSize: 14,
+                    fontFamily: 'Roboto',
+                    fontWeight: FontWeight.w500,
                   ),
                   tabs: _buildTabs(),
                 ),

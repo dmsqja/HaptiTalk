@@ -5,7 +5,7 @@
 
 const logger = require('./logger');
 const MessageBatcher = require('./message-batcher');
-const { createKafkaClient } = require('/app/api/shared/kafka-client');
+const { createKafkaClient } = require('../../api/shared/kafka-client');
 
 // Kafka 클라이언트 생성
 const kafkaClient = createKafkaClient({

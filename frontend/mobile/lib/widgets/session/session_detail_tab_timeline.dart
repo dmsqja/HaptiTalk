@@ -436,9 +436,53 @@ class SessionDetailTabTimeline extends StatelessWidget {
     
     final duration = (metrics.totalDuration / 60).round();
     final speechRate = metrics.speakingMetrics.speechRate.toInt();
-    final avgEmotion = emotionData.isNotEmpty 
-        ? emotionData.map((e) => e.value).reduce((a, b) => a + b) / emotionData.length
-        : metrics.emotionMetrics.averageLikeability;
+    
+    // 🔥 백엔드에서 이미 계산된 값 우선 사용
+    double avgEmotion = 0;
+    final rawApiData = analysisResult.rawApiData;
+    
+    if (rawApiData.isNotEmpty && rawApiData['keyMetrics'] != null) {
+      final keyMetrics = rawApiData['keyMetrics'] as Map<String, dynamic>;
+      
+      switch (sessionType) {
+        case 'presentation':
+          final presentationMetrics = keyMetrics['presentation'] as Map<String, dynamic>?;
+          if (presentationMetrics != null && presentationMetrics['confidence'] != null) {
+            avgEmotion = (presentationMetrics['confidence'] as num).toDouble();
+            print('📊 타임라인 요약: 백엔드 발표 자신감 사용 ($avgEmotion%) - keyMetrics.presentation.confidence');
+          } else {
+            avgEmotion = emotionData.isNotEmpty 
+                ? emotionData.map((e) => e.value).reduce((a, b) => a + b) / emotionData.length
+                : metrics.emotionMetrics.averageLikeability;
+            print('📊 타임라인 요약: 폴백 발표 자신감 사용 ($avgEmotion%)');
+          }
+          break;
+        case 'interview':
+          final interviewMetrics = keyMetrics['interview'] as Map<String, dynamic>?;
+          if (interviewMetrics != null && interviewMetrics['confidence'] != null) {
+            avgEmotion = (interviewMetrics['confidence'] as num).toDouble();
+            print('📊 타임라인 요약: 백엔드 면접 자신감 사용 ($avgEmotion%) - keyMetrics.interview.confidence');
+          } else {
+            avgEmotion = emotionData.isNotEmpty 
+                ? emotionData.map((e) => e.value).reduce((a, b) => a + b) / emotionData.length
+                : metrics.emotionMetrics.averageLikeability;
+            print('📊 타임라인 요약: 폴백 면접 자신감 사용 ($avgEmotion%)');
+          }
+          break;
+        default:
+          // 폴백 로직
+          avgEmotion = emotionData.isNotEmpty 
+              ? emotionData.map((e) => e.value).reduce((a, b) => a + b) / emotionData.length
+              : metrics.emotionMetrics.averageLikeability;
+          print('📊 타임라인 요약: 기본 감정 데이터 사용 ($avgEmotion%)');
+      }
+    } else {
+      // 폴백 로직
+      avgEmotion = emotionData.isNotEmpty 
+          ? emotionData.map((e) => e.value).reduce((a, b) => a + b) / emotionData.length
+          : metrics.emotionMetrics.averageLikeability;
+      print('📊 타임라인 요약: 폴백 감정 데이터 사용 ($avgEmotion%)');
+    }
 
     switch (sessionType) {
       case 'presentation':

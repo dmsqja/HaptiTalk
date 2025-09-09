@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'emotion_data.dart';
 import 'metrics.dart';
+import 'dart:math' as Math;
 
 // 세션 분석 결과 모델
 class AnalysisResult {
@@ -49,289 +50,118 @@ class AnalysisResult {
     try {
       print('🔍 API 응답 파싱 시작: $apiData');
       
-      // 🔥 안전한 타입 변환을 위한 헬퍼 함수 사용
+      // 🔥 실제 report-service 응답 구조에 맞게 수정
       final safeApiData = _safeCastMap(apiData);
       
-      // 🔥 실제 API 응답 구조에 맞게 수정
-      // 이전: sessionInfo/analysis 구조 → 현재: 직접 필드 접근
-      final sessionInfo = _safeCastMap(safeApiData['sessionInfo'] ?? {});
-      final analysis = _safeCastMap(safeApiData['analysis'] ?? {});
-      final timeline = safeApiData['timeline'] ?? [];
+      // 🔥 report-service의 실제 필드들
+      final sessionId = safeApiData['sessionId'] ?? 'unknown';
+      final sessionType = safeApiData['sessionType'] ?? 'presentation';
+      final duration = safeApiData['duration'] ?? 180;
+      final createdAt = safeApiData['createdAt'] ?? DateTime.now().toIso8601String();
       
-      // 🔥 실제 API 응답 필드들 추가 확인
+      // 🔥 keyMetrics에서 실제 지표 추출
       final keyMetrics = _safeCastMap(safeApiData['keyMetrics'] ?? {});
-      final communicationPatterns = safeApiData['communicationPatterns'] ?? [];
+      final speaking = _safeCastMap(keyMetrics['speaking'] ?? {});
       final emotionAnalysis = _safeCastMap(safeApiData['emotionAnalysis'] ?? {});
-      final specializationInsights = _safeCastMap(safeApiData['specializationInsights'] ?? {});
-      
-      // 🔥 실제 detailedTimeline 데이터 확인
       final detailedTimeline = safeApiData['detailedTimeline'] ?? [];
       
-      print('🔍 sessionInfo: $sessionInfo');
-      print('🔍 analysis: $analysis');
       print('🔍 keyMetrics: $keyMetrics');
-      print('🔍 communicationPatterns: $communicationPatterns');
+      print('🔍 speaking: $speaking');
       print('🔍 emotionAnalysis: $emotionAnalysis');
       print('🔍 detailedTimeline 길이: ${detailedTimeline.length}');
       
-      // 감정 데이터 생성 (timeline에서 추출)
+      // 🔥 감정 데이터 생성 (detailedTimeline에서 추출)
       List<EmotionData> emotionData = [];
       print('🎯 === 타임라인 그래프 데이터 생성 시작 ===');
       
-      // 🔥 detailedTimeline 우선 사용, 없으면 timeline 사용
-      final timelineSource = detailedTimeline.isNotEmpty ? detailedTimeline : (timeline ?? []);
-      print('🔍 타임라인 소스 길이: ${timelineSource.length}');
-      
-      if (timelineSource.isNotEmpty) {
-        // 실제 timeline 데이터가 있는 경우
-        print('✅ API timeline 데이터 사용 - 실제 데이터로 그래프 생성');
-        for (int i = 0; i < timelineSource.length; i++) {
-          final timePoint = _safeCastMap(timelineSource[i]);
+      if (detailedTimeline.isNotEmpty) {
+        print('✅ detailedTimeline 데이터 사용: ${detailedTimeline.length}개 포인트');
+        
+        for (int i = 0; i < detailedTimeline.length; i++) {
+          final timePoint = _safeCastMap(detailedTimeline[i]);
+          final timestamp = (timePoint['timestamp'] ?? (i + 1) * 30).toDouble();
+          final emotionScore = (timePoint['emotion_score'] ?? 0.5) as num;
+          final confidence = (timePoint['confidence'] ?? 0.7) as num;
           
-          // 🔥 실제 API 구조에 맞게 수정: emotionScores.positive 사용
-          double positiveScore = 50.0; // 기본값
-          
-          if (timePoint['emotionScores'] != null) {
-            final emotionScores = _safeCastMap(timePoint['emotionScores']);
-            positiveScore = ((emotionScores['positive'] ?? 0.5) * 100).clamp(20.0, 95.0);
-          } else if (timePoint['confidence'] != null) {
-            // confidence 점수 사용
-            positiveScore = ((timePoint['confidence'] ?? 0.5) * 100).clamp(20.0, 95.0);
-          }
-          
-          if (i < 3) { // 처음 3개만 로그
-            print('🔢 timeline[$i]: timestamp=${timePoint['timestamp']}, positiveScore=${positiveScore.toStringAsFixed(1)}%');
-          }
+          // 🔥 emotion_score를 기반으로 감정 타입과 값 계산
+          final positiveRatio = emotionScore.toDouble();
+          final emotionValue = (positiveRatio * 100).clamp(20.0, 95.0);
+          final emotionType = positiveRatio > 0.6 ? '긍정적' : 
+                            positiveRatio < 0.4 ? '부정적' : '중립적';
           
           emotionData.add(EmotionData(
-            timestamp: (timePoint['timestamp'] ?? i * 30).toDouble(),
-            emotionType: _getEmotionType(positiveScore.round()),
-            value: positiveScore,
-            description: timePoint['transcription'] ?? 'Segment ${i + 1}',
+            timestamp: timestamp,
+            emotionType: emotionType,
+            value: emotionValue,
+            description: '${(timestamp / 60).floor()}분 ${(timestamp % 60).floor()}초 시점',
           ));
         }
-        print('✅ Timeline 파싱 완료: ${emotionData.length}개 포인트 (실제 API 데이터)');
+        
+        print('✅ detailedTimeline에서 ${emotionData.length}개 감정 데이터 생성');
       } else {
-        // 🔥 timeline이 없을 때 감정 지표 기반으로 시뮬레이션 데이터 생성
-        print('⚠️ API timeline 데이터 없음 - 시뮬레이션 데이터로 그래프 생성');
-        // 🔥 실제 API 응답 구조에 맞게 수정: emotions.happiness 사용
-        final emotions = _safeCastMap(emotionAnalysis['emotions'] ?? {});
-        final baseScore = ((emotions['happiness'] ?? 0.3) * 100);
-        print('🔢 기준 점수: ${baseScore.toStringAsFixed(1)}% (emotionAnalysis.emotions.happiness 기반)');
+        print('⚠️ detailedTimeline이 비어있음, 기본 데이터 생성');
         
-        // 30개 포인트로 자연스러운 감정 변화 시뮬레이션
-        for (int i = 0; i < 30; i++) {
-          final progress = i / 29.0; // 0.0 ~ 1.0
-          
-          // 자연스러운 감정 패턴 (초반 낮음 → 중반 상승 → 후반 안정)
-          double multiplier;
-          if (progress < 0.3) {
-            multiplier = 0.8 + (progress * 0.4); // 0.8 → 0.92
-          } else if (progress < 0.7) {
-            multiplier = 0.92 + ((progress - 0.3) * 0.25); // 0.92 → 1.02
-          } else {
-            multiplier = 1.02 - ((progress - 0.7) * 0.07); // 1.02 → 0.98
-          }
-          
-          // 약간의 랜덤 변동 추가
-          final randomFactor = (i % 3 == 0) ? 1.05 : ((i % 3 == 1) ? 0.95 : 1.0);
-          final value = (baseScore * multiplier * randomFactor).clamp(20.0, 95.0);
-          
-          if (i < 3 || i >= 27) { // 처음 3개와 마지막 3개만 로그
-            print('🔢 시뮬레이션[$i]: 진행률=${(progress * 100).toStringAsFixed(0)}%, 배수=${multiplier.toStringAsFixed(2)}, 값=${value.toStringAsFixed(1)}%');
-          }
+        // 기본 데이터 생성 (3분 = 6개 포인트)
+        final segments = Math.max<int>(6, (duration / 30).ceil());
+        final random = Math.Random();
+        
+        for (int i = 0; i < segments; i++) {
+          final timestamp = ((i + 1) * 30).toDouble();
+          final baseScore = 0.7;
+          final variation = (random.nextDouble() - 0.5) * 0.2;
+          final positiveRatio = (baseScore + variation).clamp(0.3, 0.9);
+          final emotionValue = (positiveRatio * 100).clamp(20.0, 95.0);
+          final emotionType = positiveRatio > 0.6 ? '긍정적' : '중립적';
           
           emotionData.add(EmotionData(
-            timestamp: (i * 2).toDouble(), // 2초 간격
-            emotionType: _getEmotionType(value.round()),
-            value: value,
-            description: '${(i * 2 ~/ 60).toString().padLeft(2, '0')}:${(i * 2 % 60).toString().padLeft(2, '0')} 시점',
+            timestamp: timestamp,
+            emotionType: emotionType,
+            value: emotionValue,
+            description: '${(timestamp / 60).floor()}분 ${(timestamp % 60).floor()}초 시점',
           ));
         }
-        print('⚠️ 시뮬레이션 데이터 생성: ${emotionData.length}개 포인트 (API 데이터 없음)');
+        
+        print('✅ 기본 감정 데이터 ${emotionData.length}개 생성');
       }
-      print('🎯 === 타임라인 그래프 데이터 생성 완료 ===\n');
       
-      // 감정 변화 포인트 생성
+      // 🔥 감정 변화 포인트 생성
       List<EmotionChangePoint> changePoints = [];
-      for (var point in (analysis['emotionChanges'] ?? [])) {
-        final safePoint = _safeCastMap(point);
-        changePoints.add(EmotionChangePoint(
-          time: safePoint['time'] ?? '00:00:00',
-          timestamp: safePoint['timestamp'] ?? 0,
-          description: safePoint['description'] ?? '',
-          emotionValue: safePoint['emotionValue'] ?? 50,
-          label: safePoint['label'] ?? '',
-          topics: List<String>.from(safePoint['topics'] ?? []),
-        ));
-      }
-      
-      // 🔥 실제 API 응답에서 값 추출 (새로운 구조 반영)
-      final duration = (safeApiData['duration'] ?? 
-                       sessionInfo['duration'] ?? 
-                       sessionInfo['totalDuration'] ?? 
-                       analysis['duration'] ?? 
-                       analysis['totalDuration'] ?? 
-                       30).toDouble(); // API에서 초 단위로 오는 것으로 추정
-      
-      // communicationPatterns에서 speaking_rate 찾기
-      double speechRateFromPatterns = 120.0;
-      for (var pattern in communicationPatterns) {
-        final safePattern = _safeCastMap(pattern);
-        if (safePattern['type'] == 'speaking_rate') {
-          speechRateFromPatterns = (safePattern['average'] ?? 120.0).toDouble();
-          break;
-        }
-      }
-      
-      final speechRate = (keyMetrics['wordsPerMinute'] ?? 
-                         speechRateFromPatterns ??
-                         analysis['averageSpeed'] ?? 
-                         analysis['speechRate'] ?? 
-                         analysis['speakingSpeed'] ?? 
-                         analysis['wpm'] ?? 
-                         120).toDouble();
-      
-      final tonality = (analysis['tonality'] ?? 
-                        analysis['tone'] ?? 
-                        analysis['tonality_score'] ?? 
-                        75).toDouble();
-      
-      final clarity = (analysis['clarity'] ?? 
-                       analysis['clarity_score'] ?? 
-                       analysis['pronunciation'] ?? 
-                       80).toDouble();
-      
-      // emotionAnalysis에서 감정 지표 추출
-      final emotions = _safeCastMap(emotionAnalysis['emotions'] ?? {});
-      final averageInterest = ((emotions['happiness'] ?? 0.3) * 100).toDouble();
-      
-      // specializationInsights에서 추가 정보 추출
-      final rapportBuilding = _safeCastMap(specializationInsights['rapport_building'] ?? {});
-      final conversationTopics = _safeCastMap(specializationInsights['conversation_topics'] ?? {});
-      final emotionalConnection = _safeCastMap(specializationInsights['emotional_connection'] ?? {});
-      
-      final averageLikeability = (rapportBuilding['score'] ?? 50).toDouble();
-      
-      final contributionRatio = ((keyMetrics['userSpeakingRatio'] ?? 0.6) * 100).toDouble();
-      
-      // 대화 흐름 분석에서 경청 점수 계산
-      final overallInsights = safeApiData['overallInsights'] ?? [];
-      double listeningScore = 75.0;
-      for (var insight in overallInsights) {
-        if (insight.toString().contains('들어주면') || insight.toString().contains('경청')) {
-          listeningScore = 60.0; // 경청 개선 필요 시 낮은 점수
-          break;
-        } else if (insight.toString().contains('잘 들었') || insight.toString().contains('적극적')) {
-          listeningScore = 85.0; // 좋은 경청 시 높은 점수
-          break;
-        }
-      }
-      
-      print('🔍 파싱된 값들: duration=$duration, speechRate=$speechRate, tonality=$tonality, clarity=$clarity');
-      print('🔍 감정 지표: averageInterest=$averageInterest, contributionRatio=$contributionRatio, listeningScore=$listeningScore');
-      print('🔍 전문 분석: rapportScore=${rapportBuilding['score']}, topicDiversity=${conversationTopics['diversity']}');
-      
-      // 주제 분석 데이터 추출 및 변환 (🔥 rawApiData에서 직접 추출로 수정)
-      final apiTopics = _extractTopicsFromApi(safeApiData, conversationTopics);
-      final baseTopics = _convertTopics(apiTopics);
-      
-      // 🔥 communicationPatterns에서 실제 주제 및 습관적 표현 추출
-      List<ConversationTopic> enhancedTopics = [];
-      
-      if (communicationPatterns.isNotEmpty) {
-        print('🔍 communicationPatterns 처리 시작: ${communicationPatterns.length}개');
+      for (int i = 1; i < emotionData.length; i++) {
+        final prev = emotionData[i - 1];
+        final current = emotionData[i];
+        final change = (current.value - prev.value).abs();
         
-        // 습관적 표현들 추출
-        final habitualPhrases = communicationPatterns
-            .where((pattern) => pattern['type'] == 'habitual_phrase')
-            .toList();
-        
-        if (habitualPhrases.isNotEmpty) {
-          print('✅ 습관적 표현 발견: ${habitualPhrases.length}개');
+        if (change > 15.0) { // 15점 이상 변화시 포인트 생성
+          final time = '${(current.timestamp / 60).floor().toString().padLeft(2, '0')}:${(current.timestamp % 60).floor().toString().padLeft(2, '0')}';
           
-          // 총 카운트 계산
-          final totalCount = habitualPhrases
-              .map((phrase) => phrase['count'] ?? 0)
-              .fold(0, (sum, count) => sum + count);
-          
-          // 습관적 표현을 주제로 변환 (상위 5개만)
-          final sortedPhrases = habitualPhrases..sort((a, b) {
-            // 🔧 명시적인 int 타입 반환으로 수정
-            final countA = (a['count'] ?? 0) as int;
-            final countB = (b['count'] ?? 0) as int;
-            return countB.compareTo(countA);
-          });
-          
-          for (var i = 0; i < sortedPhrases.length && i < 5; i++) {
-            final phrase = sortedPhrases[i];
-            final content = phrase['content'] ?? '';
-            final count = phrase['count'] ?? 0;
-            final percentage = totalCount > 0 ? (count / totalCount * 100).clamp(5.0, 40.0) : 10.0;
-            
-            if (content.isNotEmpty) {
-              enhancedTopics.add(ConversationTopic(
-                name: '"$content" 표현',
-                percentage: percentage,
-                isPrimary: count >= 5, // 5번 이상 사용시 주요 주제
-              ));
-            }
-          }
-          
-          print('🔢 습관적 표현 주제 생성: ${enhancedTopics.length}개');
+          changePoints.add(EmotionChangePoint(
+            time: time,
+            timestamp: current.timestamp,
+            description: current.value > prev.value 
+                ? '감정 상태 개선' 
+                : '감정 상태 하락',
+            emotionValue: current.value,
+            label: current.emotionType,
+            topics: [],
+          ));
         }
       }
       
-      // 기존 주제와 습관적 표현 주제 병합
-      final finalTopics = enhancedTopics.isNotEmpty ? enhancedTopics : baseTopics;
+      print('✅ 감정 변화 포인트 ${changePoints.length}개 생성');
       
-      // 세션 지표 생성
-      final metrics = SessionMetrics(
-        totalDuration: duration,
-        audioRecorded: sessionInfo['audioRecorded'] ?? true,
-        speakingMetrics: SpeakingMetrics(
-          speechRate: speechRate,
-          tonality: tonality,
-          clarity: clarity,
-          habitPatterns: _convertHabitPatterns(analysis['habitPatterns'] ?? []),
-        ),
-        emotionMetrics: EmotionMetrics(
-          averageInterest: averageInterest,
-          averageLikeability: averageLikeability,
-          peakLikeability: (analysis['peakLikability'] ?? analysis['maxLikeability'] ?? averageLikeability + 10).toDouble(),
-          lowestLikeability: (analysis['lowestLikability'] ?? analysis['minLikeability'] ?? averageLikeability - 10).toDouble(),
-          feedbacks: _convertEmotionFeedbacks(analysis['feedbacks'] ?? []),
-        ),
-        conversationMetrics: ConversationMetrics(
-          contributionRatio: contributionRatio,
-          listeningScore: listeningScore,
-          interruptionCount: (analysis['interruptionCount'] ?? analysis['interruptions'] ?? 0).toDouble(),
-          flowDescription: analysis['flowDescription'] ?? analysis['summary'] ?? '안정적인 대화 흐름',
-        ),
-        topicMetrics: TopicMetrics(
-          topics: finalTopics,
-          timepoints: _convertTopicTimepoints(analysis['topicTimepoints'] ?? []),
-          insights: _convertApiInsights(overallInsights),
-          recommendations: _convertApiRecommendations(safeApiData['improvementAreas'] ?? []),
-        ),
-      );
+      // 🔥 SessionMetrics 생성 (실제 API 데이터 기반)
+      final metrics = _createSessionMetricsFromApiData(apiData, emotionData);
       
-      // 🔥 세션 타입 추출 (실제 API 응답 구조 반영)
-      final sessionType = safeApiData['sessionType'] ??
-                         sessionInfo['type'] ?? 
-                         sessionInfo['sessionType'] ?? 
-                         sessionInfo['category'] ?? 
-                         'presentation'; // 기본값은 가장 일반적인 발표로
-      
-      print('🔍 세션 타입 파싱: apiData[sessionType]=${safeApiData['sessionType']}, 최종값=$sessionType');
+      // 🔥 세션 타입 변환
+      print('🔍 세션 타입 파싱: apiData[sessionType]=$sessionType');
       final convertedCategory = _convertSessionType(sessionType);
       print('🔍 변환된 카테고리: $sessionType → $convertedCategory');
       
       return AnalysisResult(
-        sessionId: safeApiData['sessionId'] ?? sessionInfo['sessionId'] ?? 'unknown',
-        title: sessionInfo['title'] ?? sessionInfo['name'] ?? '이름 없는 세션',
-        date: DateTime.tryParse(safeApiData['createdAt'] ?? sessionInfo['date'] ?? sessionInfo['createdAt'] ?? '') ?? DateTime.now(),
-        sessionStartTime: DateTime.tryParse(sessionInfo['startTime'] ?? sessionInfo['date'] ?? sessionInfo['createdAt'] ?? safeApiData['createdAt'] ?? '') ?? DateTime.now(),
+        sessionId: sessionId,
+        title: '${_convertSessionTypeToKorean(sessionType)} 세션',
+        date: DateTime.tryParse(createdAt) ?? DateTime.now(),
+        sessionStartTime: DateTime.tryParse(createdAt) ?? DateTime.now(),
         category: convertedCategory,
         emotionData: emotionData,
         emotionChangePoints: changePoints,
@@ -405,6 +235,67 @@ class AnalysisResult {
     return <String, dynamic>{};
   }
 
+  // 🔥 API 데이터로부터 SessionMetrics 생성하는 헬퍼 메서드
+  static SessionMetrics _createSessionMetricsFromApiData(Map<String, dynamic> apiData, List<EmotionData> emotionData) {
+    final safeApiData = _safeCastMap(apiData);
+    final keyMetrics = _safeCastMap(safeApiData['keyMetrics'] ?? {});
+    final speaking = _safeCastMap(keyMetrics['speaking'] ?? {});
+    final emotionAnalysis = _safeCastMap(safeApiData['emotionAnalysis'] ?? {});
+    final duration = safeApiData['duration'] ?? 180;
+    
+    // SpeakingMetrics 생성
+    final speakingMetrics = SpeakingMetrics(
+      speechRate: (speaking['speed'] ?? 120).toDouble(),
+      tonality: (speaking['tonality'] ?? 75).toDouble(),
+      clarity: (speaking['clarity'] ?? 80).toDouble(),
+      habitPatterns: [], // 현재는 빈 배열
+    );
+    
+    // EmotionMetrics 생성
+    final emotions = _safeCastMap(emotionAnalysis['emotions'] ?? {});
+    final averageEmotion = emotionData.isNotEmpty 
+        ? emotionData.map((e) => e.value).reduce((a, b) => a + b) / emotionData.length
+        : 70.0;
+    
+    final emotionMetrics = EmotionMetrics(
+      averageInterest: (emotions['happiness'] ?? averageEmotion).toDouble(),
+      averageLikeability: averageEmotion,
+      peakLikeability: emotionData.isNotEmpty 
+          ? emotionData.map((e) => e.value).reduce(Math.max)
+          : averageEmotion + 10,
+      lowestLikeability: emotionData.isNotEmpty 
+          ? emotionData.map((e) => e.value).reduce(Math.min)
+          : averageEmotion - 10,
+      feedbacks: [], // 현재는 빈 배열
+    );
+    
+    // ConversationMetrics 생성
+    final communication = _safeCastMap(keyMetrics['communication'] ?? {});
+    final conversationMetrics = ConversationMetrics(
+      contributionRatio: ((speaking['ratio'] ?? 0.6) * 100).toDouble(),
+      listeningScore: 75.0, // 기본값
+      interruptionCount: (communication['interruptions'] ?? 0).toDouble(),
+      flowDescription: '안정적인 대화 흐름',
+    );
+    
+    // TopicMetrics 생성
+    final topicMetrics = TopicMetrics(
+      topics: [], // 현재는 빈 배열
+      timepoints: [], // 현재는 빈 배열
+      insights: [], // 현재는 빈 배열
+      recommendations: [], // 현재는 빈 배열
+    );
+    
+    return SessionMetrics(
+      totalDuration: duration.toDouble(),
+      audioRecorded: true,
+      speakingMetrics: speakingMetrics,
+      emotionMetrics: emotionMetrics,
+      conversationMetrics: conversationMetrics,
+      topicMetrics: topicMetrics,
+    );
+  }
+
   // 헬퍼 메서드들
   static String _getEmotionType(int score) {
     if (score >= 70) return '긍정적';
@@ -413,6 +304,17 @@ class AnalysisResult {
   }
 
   static String _convertSessionType(String apiType) {
+    switch (apiType) {
+      case 'dating': return '소개팅';
+      case 'interview': return '면접';
+      case 'presentation': return '발표';
+      case 'coaching': return '코칭';
+      case 'business': return '비즈니스';
+      default: return '기타';
+    }
+  }
+
+  static String _convertSessionTypeToKorean(String apiType) {
     switch (apiType) {
       case 'dating': return '소개팅';
       case 'interview': return '면접';

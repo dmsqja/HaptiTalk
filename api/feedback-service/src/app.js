@@ -14,7 +14,7 @@ const {connectToMongoDB} = require('./config/mongodb');
 const { v4: uuidv4 } = require('uuid');
 const { swaggerUi, specs } = require('./utils/swagger');
 const Redis = require('ioredis');
-const AnalyticsCore = require('../../shared/analytics-core');
+const AnalyticsCore = require('../api/shared/analytics-core');
 
 // Redis 클라이언트 초기화
 const redisClient = new Redis({

@@ -1,1 +1,48 @@
-[라이선스 정보 추가 예정]
+MIT License
+
+Copyright (c) 2025 음결 (Eumgyeol) Team
+HaptiTalk Development Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+
+PATENT NOTICE
+
+This software implements technology that may be covered by patents owned by
+the 음결 (Eumgyeol) Team, including but not limited to patents related
+to "Real-time Conversation Analysis and Haptic Feedback Systems."
+
+The MIT License above grants permission to use the source code, but does NOT
+grant any patent rights. Any commercial use of the patented technology
+requires separate patent licensing agreements.
+
+For patent licensing inquiries, please contact: xotks7524@gmail.com
+
+================================================================================
+
+THIRD-PARTY COMPONENTS
+
+This software includes the following third-party components:
+
+- WhisperX: Licensed under Apache License 2.0
+- Wav2Vec2-XLSR: Licensed under MIT License  
+- Other dependencies: See individual package licenses in package.json/pubspec.yaml
+
+The use of these third-party components is subject to their respective licenses.

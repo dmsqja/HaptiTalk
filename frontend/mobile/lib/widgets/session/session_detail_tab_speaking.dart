@@ -23,8 +23,18 @@ class SessionDetailTabSpeaking extends StatelessWidget {
             children: [
               Row(
                   children: [
-                    // 말하기 속도 카드
+                    // 자신감 카드 (발표 주도도에서 변경)
                   Expanded(
+                    child: _buildMetricCard(
+                      title: '자신감',
+                      value: '${_getEngagementLevel()}%',
+                      subtitle: _getEngagementAssessment(_getEngagementLevel()),
+                      progress: _getEngagementLevel() / 100,
+                ),
+              ),
+                  SizedBox(width: 12),
+                  // 말하기 속도 카드
+              Expanded(
                     child: _buildMetricCard(
                       title: '말하기 속도',
                       value: '${analysisResult.metrics.speakingMetrics.speechRate.toStringAsFixed(0)}WPM',
@@ -32,21 +42,21 @@ class SessionDetailTabSpeaking extends StatelessWidget {
                       progress: (analysisResult.metrics.speakingMetrics.speechRate / 150).clamp(0.0, 1.0),
                 ),
               ),
-                  SizedBox(width: 12),
-                  // 설득력 카드 (실제 API 데이터 사용)
-              Expanded(
-                    child: _buildMetricCard(
-                      title: '설득력',
-                      value: '${_getPersuasionLevel()}%',
-                      subtitle: _getPersuasionAssessment(_getPersuasionLevel()),
-                      progress: _getPersuasionLevel() / 100,
-                ),
-              ),
             ],
           ),
               SizedBox(height: 12),
                 Row(
                   children: [
+                  // 설득력 카드 (실제 API 데이터 사용)
+                  Expanded(
+                    child: _buildMetricCard(
+                      title: '설득력',
+                      value: '${_getPersuasionLevel()}%',
+                      subtitle: _getPersuasionAssessment(_getPersuasionLevel()),
+                      progress: _getPersuasionLevel() / 100,
+                    ),
+                  ),
+                  SizedBox(width: 12),
                   // 명확성 카드
                   Expanded(
                     child: _buildMetricCard(
@@ -54,16 +64,6 @@ class SessionDetailTabSpeaking extends StatelessWidget {
                       value: '${_getClarityLevel()}%',
                       subtitle: _getClarityAssessment(_getClarityLevel()),
                       progress: _getClarityLevel() / 100,
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  // 발표 주도도 카드 (실제 API 데이터 사용)
-                  Expanded(
-                    child: _buildMetricCard(
-                      title: '발표 주도도',
-                      value: '${_getEngagementLevel()}%',
-                      subtitle: _getEngagementAssessment(_getEngagementLevel()),
-                      progress: _getEngagementLevel() / 100,
                       ),
                     ),
                   ],
@@ -372,7 +372,20 @@ class SessionDetailTabSpeaking extends StatelessWidget {
 
   // 🔥 실제 API 데이터 기반 분석 메서드들
   int _getPersuasionLevel() {
-    // 🔥 발표에서 설득력 = 톤(억양) + 명확성 조합이 더 적절
+    // �� 백엔드에서 이미 계산된 값 우선 사용
+    final rawApiData = analysisResult.rawApiData;
+    if (rawApiData.isNotEmpty && rawApiData['keyMetrics'] != null) {
+      final keyMetrics = rawApiData['keyMetrics'] as Map<String, dynamic>;
+      final presentationMetrics = keyMetrics['presentation'] as Map<String, dynamic>?;
+      
+      if (presentationMetrics != null && presentationMetrics['persuasion'] != null) {
+        final persuasion = (presentationMetrics['persuasion'] as num).round();
+        print('📊 설득력: 백엔드 계산값 사용 ($persuasion%) - keyMetrics.presentation.persuasion');
+        return persuasion;
+      }
+    }
+    
+    // 🔥 폴백: 발표에서 설득력 = 톤(억양) + 명확성 조합이 더 적절
     // averageInterest(감정적 관심도)보다 실제 말하기 스킬이 중요
     final tonality = analysisResult.metrics.speakingMetrics.tonality;
     final clarity = analysisResult.metrics.speakingMetrics.clarity;
@@ -384,25 +397,50 @@ class SessionDetailTabSpeaking extends StatelessWidget {
     // 발표 설득력 = 톤(50%) + 명확성(50%)
     final persuasionScore = (normalizedTonality * 0.5 + normalizedClarity * 0.5);
     final result = persuasionScore.round();
-    print('📊 설득력: 말하기 기반 계산 ($result%) - tonality=$normalizedTonality, clarity=$normalizedClarity (발표에 적합한 지표)');
+    print('📊 설득력: 폴백 계산 ($result%) - tonality=$normalizedTonality, clarity=$normalizedClarity (발표에 적합한 지표)');
     return result;
   }
 
   int _getClarityLevel() {
-    // 🔥 specializationInsights 대신 metrics 사용 (분석결과 탭과 동일)
+    // 🔥 백엔드에서 이미 계산된 값 우선 사용
+    final rawApiData = analysisResult.rawApiData;
+    if (rawApiData.isNotEmpty && rawApiData['keyMetrics'] != null) {
+      final keyMetrics = rawApiData['keyMetrics'] as Map<String, dynamic>;
+      final presentationMetrics = keyMetrics['presentation'] as Map<String, dynamic>?;
+      
+      if (presentationMetrics != null && presentationMetrics['clarity'] != null) {
+        final clarity = (presentationMetrics['clarity'] as num).round();
+        print('📊 명확성: 백엔드 계산값 사용 ($clarity%) - keyMetrics.presentation.clarity');
+        return clarity;
+      }
+    }
+    
+    // 🔥 폴백: specializationInsights 대신 metrics 사용 (분석결과 탭과 동일)
     final clarity = analysisResult.metrics.speakingMetrics.clarity;
     // 🔧 clarity 값이 이미 0-100 범위인지 0-1 범위인지 확인하여 정규화
     final normalizedClarity = clarity > 1 ? clarity : clarity * 100;
+    print('📊 명확성: 폴백 계산 (${normalizedClarity.round()}%) - metrics.speakingMetrics.clarity');
     return normalizedClarity.round();
   }
 
   int _getEngagementLevel() {
-    // 🔥 발표 주도도 = 얼마나 발화를 주도했는지 (자신감과는 다른 개념)
-    // 자신감 = 감정적 자신감 (averageLikeability)
-    // 발표 주도도 = 발화 비율/기여도 (contributionRatio)
+    // 🔥 백엔드에서 이미 계산된 값 우선 사용
+    final rawApiData = analysisResult.rawApiData;
+    if (rawApiData.isNotEmpty && rawApiData['keyMetrics'] != null) {
+      final keyMetrics = rawApiData['keyMetrics'] as Map<String, dynamic>;
+      final presentationMetrics = keyMetrics['presentation'] as Map<String, dynamic>?;
+      
+      if (presentationMetrics != null && presentationMetrics['confidence'] != null) {
+        final confidence = (presentationMetrics['confidence'] as num).round();
+        print('📊 자신감: 백엔드 계산값 사용 ($confidence%) - keyMetrics.presentation.confidence');
+        return confidence;
+      }
+    }
+    
+    // 🔥 폴백: 기존 contributionRatio 기반 계산 (백엔드 데이터 없을 때만)
     final contributionRatio = analysisResult.metrics.conversationMetrics.contributionRatio;
     final result = contributionRatio.round();
-    print('📊 발표 주도도: metrics 기반 계산 ($result%) - contributionRatio=$contributionRatio (≠자신감)');
+    print('📊 자신감: 폴백 계산 ($result%) - contributionRatio=$contributionRatio');
     return result;
   }
 
@@ -541,7 +579,7 @@ class SessionDetailTabSpeaking extends StatelessWidget {
                       margin: EdgeInsets.symmetric(horizontal: 1),
                       height: height,
                       decoration: BoxDecoration(
-                        color: Color(0xFF2196F3), // 파란색
+                        color: Color(0xFF3F51B5), // 진한 남색 (테마 색상)
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -610,11 +648,11 @@ class SessionDetailTabSpeaking extends StatelessWidget {
 
   String _getEngagementAssessment(int engagementLevel) {
     if (engagementLevel < 30) {
-      return '발표 주도도가 낮습니다. 더 많은 연습을 통해 발표 주도도를 높이세요.';
-    } else if (engagementLevel > 50) {
-      return '발표 주도도가 높습니다. 현재 발표 주도도 수준을 유지하세요.';
+      return '자신감이 낮습니다. 더 많은 연습을 통해 자신감을 높이세요.';
+    } else if (engagementLevel > 70) {
+      return '자신감이 높습니다. 현재 자신감 수준을 유지하세요.';
     } else {
-      return '발표 주도도가 적절합니다. 현재 발표 주도도 수준을 유지하세요.';
+      return '자신감이 적절합니다. 현재 자신감 수준을 유지하세요.';
     }
   }
 }
